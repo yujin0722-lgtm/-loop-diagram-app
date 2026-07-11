@@ -404,8 +404,14 @@
         if (!sb) { alert('Supabaseに接続できません'); return; }
         var redirectTo = window.location.href.split('#')[0];
         sb.auth.signInWithOtp({ email: email, options: { emailRedirectTo: redirectTo } }).then(function(res){
-          if (res.error) alert('送信に失敗しました: ' + res.error.message);
-          else alert('ログイン用のリンクを ' + email + ' 宛に送信しました。メールを確認してリンクをクリックしてください。');
+          if (res.error) {
+            var msg = res.error.message || res.error.error_description || res.error.msg || res.error.status || JSON.stringify(res.error);
+            alert('送信に失敗しました: ' + msg + '\n\n短時間に何度も試すと、Supabaseの送信回数制限にかかることがあります。少し時間をおくか、Authentication > Rate Limits の上限を確認してください。');
+          } else {
+            alert('ログイン用のリンクを ' + email + ' 宛に送信しました。メールを確認してリンクをクリックしてください。');
+          }
+        }).catch(function(err){
+          alert('送信リクエスト自体に失敗しました: ' + (err && err.message ? err.message : JSON.stringify(err)));
         });
       });
     }
