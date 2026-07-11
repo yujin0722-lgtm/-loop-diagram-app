@@ -89,7 +89,8 @@
   #diagramModal h3 { margin: 0 0 12px; font-size: 15px; }
   .diagram-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee; gap: 10px; }
   .diagram-row .meta { font-size: 12px; color: #999; }
-  .diagram-row .name { font-size: 13px; }
+  .diagram-row .name { font-size: 13px; cursor: text; }
+  .diagram-row .name:hover { text-decoration: underline; color: #1a6bd6; }
   .diagram-row button { border: 1px solid #ccc; background: #fff; border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer; }
 
   #statusbar .dot.online { background: #4caf50; }
@@ -419,9 +420,58 @@
       rows.forEach(function(r){
         var row = document.createElement('div');
         row.className = 'diagram-row';
+
+        var infoWrap = document.createElement('div');
+        var nameEl = document.createElement('div');
+        nameEl.className = 'name';
+        nameEl.textContent = r.title || '無題のループ図';
+        nameEl.title = 'クリックしてタイトルを変更';
+
+        var metaEl = document.createElement('div');
+        metaEl.className = 'meta';
         var d = new Date(r.updated_at);
-        var meta = d.getFullYear() + '/' + (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
-        row.innerHTML = '<div><div class="name">' + escHtmlEarly(r.title || '無題のループ図') + '</div><div class="meta">' + meta + '</div></div>';
+        metaEl.textContent = d.getFullYear() + '/' + (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
+
+        nameEl.addEventListener('click', function(){
+          var input = document.createElement('input');
+          input.type = 'text';
+          input.value = r.title || '無題のループ図';
+          input.style.fontSize = '13px';
+          input.style.width = '100%';
+          input.style.border = '1px solid #9fb8ea';
+          input.style.borderRadius = '4px';
+          input.style.padding = '2px 4px';
+          var finish = function(){
+            var newTitle = input.value.trim() || '無題のループ図';
+            input.replaceWith(nameEl);
+            if (newTitle === r.title) return;
+            sb.from('diagrams').update({ title: newTitle }).eq('id', r.id).then(function(res){
+              if (res.error){ alert('タイトルの変更に失敗しました: ' + res.error.message); return; }
+              r.title = newTitle;
+              nameEl.textContent = newTitle;
+              if (currentDiagramId === r.id){
+                state.title = newTitle;
+                titleInput.value = newTitle;
+                broadcastOp('title', { title: newTitle });
+              }
+            }).catch(function(err){
+              alert('タイトルの変更に失敗しました: ' + (err && err.message ? err.message : JSON.stringify(err)));
+            });
+          };
+          input.addEventListener('blur', finish);
+          input.addEventListener('keydown', function(e){
+            if (e.key === 'Enter'){ input.blur(); }
+            else if (e.key === 'Escape'){ input.value = r.title || '無題のループ図'; input.blur(); }
+          });
+          nameEl.replaceWith(input);
+          input.focus();
+          input.select();
+        });
+
+        infoWrap.appendChild(nameEl);
+        infoWrap.appendChild(metaEl);
+        row.appendChild(infoWrap);
+
         var openBtn = document.createElement('button');
         openBtn.textContent = '開く';
         openBtn.addEventListener('click', function(){ closeDiagramModal(); loadDiagramById(r.id); });
