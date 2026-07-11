@@ -28,7 +28,8 @@
 
   #canvas-wrap { flex: 1; position: relative; background: #f4f5f7; overflow: hidden; }
   svg#canvas { width: 100%; height: 100%; display: block; }
-  svg#canvas.mode-add-node, svg#canvas.mode-add-loop { cursor: copy; }
+  svg#canvas.mode-add-node, svg#canvas.mode-add-loop, svg#canvas.mode-add-text { cursor: copy; }
+  .text-note-label { font-weight: 700; cursor: move; user-select: none; }
   svg#canvas.mode-add-edge { cursor: crosshair; }
   svg#canvas.mode-pan { cursor: grab; }
 
@@ -157,6 +158,7 @@
       <button data-tool="add-node" title="ノード追加"><span class="ic">&#9633;</span>ノード</button>
       <button data-tool="add-edge" title="矢印追加"><span class="ic">&#8594;</span>矢印</button>
       <button data-tool="add-loop" title="ループラベル追加"><span class="ic">R</span>ループ</button>
+      <button data-tool="add-text" title="テキスト追加(領域の説明などに)"><span class="ic">T</span>テキスト</button>
       <hr>
       <button id="btn-zoomin" title="拡大"><span class="ic">+</span>拡大</button>
       <button id="btn-zoomout" title="縮小"><span class="ic">-</span>縮小</button>
@@ -227,6 +229,7 @@
     nodes: [],
     edges: [],
     loopLabels: [],
+    textNotes: [],
     nextId: 1
   };
 
@@ -336,7 +339,7 @@
   function doSave(){
     if (!sb || !currentUser) { setSaveStatus('no-login'); return; }
     setSaveStatus('saving');
-    var payload = { title: state.title, data: { nodes: state.nodes, edges: state.edges, loopLabels: state.loopLabels } };
+    var payload = { title: state.title, data: { nodes: state.nodes, edges: state.edges, loopLabels: state.loopLabels, textNotes: state.textNotes } };
     var req;
     if (currentDiagramId){
       req = sb.from('diagrams').update(payload).eq('id', currentDiagramId);
@@ -379,6 +382,7 @@
       state.nodes = (row.data && row.data.nodes) || [];
       state.edges = (row.data && row.data.edges) || [];
       state.loopLabels = (row.data && row.data.loopLabels) || [];
+      state.textNotes = (row.data && row.data.textNotes) || [];
       currentDiagramId = row.id;
       currentDiagramOwnerId = row.owner_id;
       currentShareSettings = row.share_settings || 'private';
@@ -695,6 +699,9 @@
     else if (op.type === 'loop:add'){ state.loopLabels.push(d.loop); }
     else if (op.type === 'loop:update'){ var l = getLoop(d.loop.id); if (l) { Object.assign(l, d.loop); } else { state.loopLabels.push(d.loop); } }
     else if (op.type === 'loop:delete'){ deleteLoop(d.id); }
+    else if (op.type === 'text:add'){ state.textNotes.push(d.textNote); }
+    else if (op.type === 'text:update'){ var tn = getTextNote(d.textNote.id); if (tn) { Object.assign(tn, d.textNote); } else { state.textNotes.push(d.textNote); } }
+    else if (op.type === 'text:delete'){ deleteTextNote(d.id); }
     else if (op.type === 'title'){ state.title = d.title; titleInput.value = d.title; }
     else if (op.type === 'share:update'){
       currentShareSettings = d.shareSettings;
@@ -777,6 +784,10 @@
     for (var i = 0; i < state.loopLabels.length; i++) if (state.loopLabels[i].id === id) return state.loopLabels[i];
     return null;
   }
+  function getTextNote(id){
+    for (var i = 0; i < state.textNotes.length; i++) if (state.textNotes[i].id === id) return state.textNotes[i];
+    return null;
+  }
 
   function screenToWorld(evt){
     var rect = svg.getBoundingClientRect();
@@ -797,10 +808,11 @@
     for (var i = 0; i < buttons.length; i++){
       buttons[i].classList.toggle('active', buttons[i].getAttribute('data-tool') === t);
     }
-    svg.classList.remove('mode-add-node','mode-add-edge','mode-add-loop','mode-pan');
+    svg.classList.remove('mode-add-node','mode-add-edge','mode-add-loop','mode-add-text','mode-pan');
     if (t === 'add-node') svg.classList.add('mode-add-node');
     if (t === 'add-edge') svg.classList.add('mode-add-edge');
     if (t === 'add-loop') svg.classList.add('mode-add-loop');
+    if (t === 'add-text') svg.classList.add('mode-add-text');
     updateHint();
   }
 
@@ -809,7 +821,8 @@
       'select': '要素をクリックして選択・ドラッグで移動できます。背景をドラッグすると画面を動かせます。',
       'add-node': 'キャンバスをクリックするとノードを追加します。',
       'add-edge': '始点ノード→終点ノードの順にクリックすると矢印を作成します。',
-      'add-loop': 'キャンバスをクリックするとループラベル(R/B)を追加します。'
+      'add-loop': 'キャンバスをクリックするとループラベル(R/B)を追加します。',
+      'add-text': 'キャンバスをクリックすると、領域の説明などに使えるテキストを追加します。'
     };
     hintEl.textContent = msgs[tool] || '';
   }
@@ -871,6 +884,9 @@
   function deleteLoop(id){
     state.loopLabels = state.loopLabels.filter(function(l){ return l.id !== id; });
   }
+  function deleteTextNote(id){
+    state.textNotes = state.textNotes.filter(function(n){ return n.id !== id; });
+  }
 
   function selectItem(type, id){
     selected = { type: type, id: id };
@@ -896,6 +912,15 @@
         state.loopLabels.push(lp);
         broadcastOp('loop:add', { loop: lp });
         selectItem('loop', lp.id);
+        return;
+      }
+      if (tool === 'add-text'){
+        if (readOnlyMode) return;
+        pushHistory();
+        var tn = { id: newId('text'), text: 'エリアの説明', x: pos.x, y: pos.y, fontSize: 20, color: '#666666' };
+        state.textNotes.push(tn);
+        broadcastOp('text:add', { textNote: tn });
+        selectItem('text', tn.id);
         return;
       }
       if (tool === 'add-edge'){
@@ -934,6 +959,7 @@
     if (dragging){
       if (dragging.kind === 'node') broadcastOp('node:update', { node: dragging.obj });
       else if (dragging.kind === 'loop') broadcastOp('loop:update', { loop: dragging.obj });
+      else if (dragging.kind === 'text') broadcastOp('text:update', { textNote: dragging.obj });
       dragging = null;
       scheduleAutosave();
     }
@@ -1067,8 +1093,19 @@
     return g;
   }
 
+  function renderTextNote(note){
+    var isSel = selected.type === 'text' && selected.id === note.id;
+    var t = svgEl('text', { x: note.x, y: note.y, 'font-size': (note.fontSize || 20), class: 'text-note-label' + (isSel ? ' selected' : '') });
+    t.setAttribute('fill', isSel ? '#1a6bd6' : (note.color || '#666666'));
+    t.textContent = note.text || '';
+    t.addEventListener('mousedown', function(evt){ startDrag(evt, note, 'text'); });
+    t.addEventListener('click', function(evt){ evt.stopPropagation(); if (tool === 'select') selectItem('text', note.id); });
+    return t;
+  }
+
   function renderLight(){
     while (viewport.firstChild) viewport.removeChild(viewport.firstChild);
+    state.textNotes.forEach(function(n){ viewport.appendChild(renderTextNote(n)); });
     state.edges.forEach(function(e){ var el = renderEdge(e); if (el) viewport.appendChild(el); });
     state.nodes.forEach(function(n){ viewport.appendChild(renderNode(n)); });
     state.loopLabels.forEach(function(l){ viewport.appendChild(renderLoop(l)); });
@@ -1125,6 +1162,25 @@
       document.getElementById('p-curve').addEventListener('input', function(e){ edge.curve = parseFloat(e.target.value); renderLight(); scheduleAutosave(); broadcastOp('edge:update', { edge: edge }); });
       attachUndoableFocusBlur(document.getElementById('p-curve'));
       document.getElementById('delbtn').addEventListener('click', function(){ pushHistory(); var did = edge.id; deleteEdge(did); broadcastOp('edge:delete', { id: did }); selected={type:null,id:null}; render(); });
+      disablePropPanelIfReadOnly();
+      return;
+    }
+    if (selected.type === 'text'){
+      var note = getTextNote(selected.id);
+      if (!note) { selected = {type:null,id:null}; proppanel.innerHTML = '<div class="empty">要素を選択すると、ここに詳細が表示されます。</div>'; return; }
+      proppanel.innerHTML =
+        '<h3>テキスト(領域の説明など)</h3>' +
+        '<label>内容</label><textarea id="p-text">' + escHtml(note.text||'') + '</textarea>' +
+        '<label>文字の大きさ</label><input type="range" id="p-fontsize" min="12" max="40" step="1" value="' + (note.fontSize||20) + '">' +
+        '<div class="row2"><div><label>色</label><input type="color" id="p-textcolor" value="' + (note.color||'#666666') + '"></div></div>' +
+        '<button id="delbtn">このテキストを削除</button>';
+      document.getElementById('p-text').addEventListener('input', function(e){ note.text = e.target.value; renderLight(); scheduleAutosave(); broadcastOp('text:update', { textNote: note }); });
+      document.getElementById('p-fontsize').addEventListener('input', function(e){ note.fontSize = parseInt(e.target.value,10); renderLight(); scheduleAutosave(); broadcastOp('text:update', { textNote: note }); });
+      document.getElementById('p-textcolor').addEventListener('input', function(e){ note.color = e.target.value; renderLight(); scheduleAutosave(); broadcastOp('text:update', { textNote: note }); });
+      attachUndoableFocusBlur(document.getElementById('p-text'));
+      attachUndoableFocusBlur(document.getElementById('p-fontsize'));
+      attachUndoableFocusBlur(document.getElementById('p-textcolor'));
+      document.getElementById('delbtn').addEventListener('click', function(){ pushHistory(); var did = note.id; deleteTextNote(did); broadcastOp('text:delete', { id: did }); selected={type:null,id:null}; render(); });
       disablePropPanelIfReadOnly();
       return;
     }
@@ -1185,6 +1241,9 @@
     state.loopLabels = [
       { id: 'loop_s1', label: 'R1', type: 'reinforcing', title: '忙しさの悪循環', description: '忙しさがミスと手戻りを通じてさらに忙しさを増やす', x: 260, y: 160 }
     ];
+    state.textNotes = [
+      { id: 'text_s1', text: '外来業務エリア', x: 60, y: 30, fontSize: 20, color: '#888888' }
+    ];
     state.title = '忙しさとミスの悪循環';
     titleInput.value = state.title;
     selected = { type: null, id: null };
@@ -1196,6 +1255,7 @@
     state.nodes = [];
     state.edges = [];
     state.loopLabels = [];
+    state.textNotes = [];
     state.title = '無題のループ図';
     titleInput.value = state.title;
     selected = { type: null, id: null };
@@ -1239,6 +1299,7 @@
       if (selected.type === 'node') { deleteNode(delId); broadcastOp('node:delete', { id: delId }); }
       if (selected.type === 'edge') { deleteEdge(delId); broadcastOp('edge:delete', { id: delId }); }
       if (selected.type === 'loop') { deleteLoop(delId); broadcastOp('loop:delete', { id: delId }); }
+      if (selected.type === 'text') { deleteTextNote(delId); broadcastOp('text:delete', { id: delId }); }
       selected = { type: null, id: null };
       render();
     }
