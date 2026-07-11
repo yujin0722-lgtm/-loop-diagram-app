@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ループ図エディタ(試作版)</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; font-family: "Hiragino Kaku Gothic ProN","Meiryo",sans-serif; color: #222; }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+
+  #topbar { flex: none; height: 56px; display: flex; align-items: center; gap: 16px; padding: 0 16px; border-bottom: 1px solid #ddd; background: #fff; }
+  #topbar input#title { font-size: 15px; font-weight: 500; border: 1px solid transparent; padding: 6px 8px; border-radius: 6px; width: 260px; }
+  #topbar input#title:hover, #topbar input#title:focus { border-color: #ccc; outline: none; }
+  #topbar .spacer { flex: 1; }
+  #topbar button { border: 1px solid #ccc; background: #fff; border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+  #topbar button:hover { background: #f2f2f2; }
+  #savenote { font-size: 12px; color: #b26a00; background: #fff6e5; border: 1px solid #ffdf9e; padding: 4px 10px; border-radius: 6px; }
+
+  #main { flex: 1; display: flex; min-height: 0; }
+
+  #toolbar { width: 72px; border-right: 1px solid #ddd; background: #fafafa; display: flex; flex-direction: column; align-items: stretch; padding: 10px 6px; gap: 4px; overflow-y: auto; }
+  #toolbar button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px; border: 1px solid transparent; background: transparent; border-radius: 8px; cursor: pointer; font-size: 11px; color: #333; }
+  #toolbar button:hover { background: #eee; }
+  #toolbar button.active { background: #e2ecff; border-color: #9fb8ea; color: #1a4b9c; }
+  #toolbar button .ic { font-size: 17px; line-height: 1; }
+  #toolbar hr { width: 100%; border: none; border-top: 1px solid #ddd; margin: 4px 0; }
+
+  #canvas-wrap { flex: 1; position: relative; background: #f4f5f7; overflow: hidden; }
+  svg#canvas { width: 100%; height: 100%; display: block; }
+  svg#canvas.mode-add-node, svg#canvas.mode-add-loop { cursor: copy; }
+  svg#canvas.mode-add-edge { cursor: crosshair; }
+  svg#canvas.mode-pan { cursor: grab; }
+
+  #hint { position: absolute; left: 12px; bottom: 12px; background: rgba(255,255,255,0.9); border: 1px solid #ddd; border-radius: 6px; padding: 6px 10px; font-size: 12px; color: #555; max-width: 360px; pointer-events: none; }
+  #legend { position: absolute; right: 12px; top: 12px; background: rgba(255,255,255,0.95); border: 1px solid #ddd; border-radius: 6px; padding: 8px 10px; font-size: 12px; color: #444; line-height: 1.6; }
+
+  #proppanel { width: 280px; border-left: 1px solid #ddd; background: #fff; padding: 14px; overflow-y: auto; }
+  #proppanel h3 { font-size: 13px; margin: 0 0 10px; color: #666; font-weight: 600; }
+  #proppanel .empty { font-size: 13px; color: #999; margin-top: 20px; }
+  #proppanel label { display: block; font-size: 12px; color: #666; margin: 12px 0 4px; }
+  #proppanel input[type=text], #proppanel textarea, #proppanel select { width: 100%; padding: 7px 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; font-family: inherit; }
+  #proppanel textarea { resize: vertical; min-height: 56px; }
+  #proppanel input[type=color] { width: 100%; height: 32px; border: 1px solid #ccc; border-radius: 6px; padding: 2px; }
+  #proppanel input[type=range] { width: 100%; }
+  #proppanel .row2 { display: flex; gap: 8px; }
+  #proppanel .row2 > div { flex: 1; }
+  #delbtn { margin-top: 18px; width: 100%; padding: 8px; border: 1px solid #e3a; background: #fff0f5; color: #a02050; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  #delbtn:hover { background: #ffe0ea; }
+
+  #statusbar { flex: none; height: 30px; display: flex; align-items: center; gap: 20px; padding: 0 16px; border-top: 1px solid #ddd; font-size: 12px; color: #666; background: #fff; }
+  #statusbar .dot { width: 8px; height: 8px; border-radius: 50%; background: #4caf50; display: inline-block; margin-right: 4px; }
+
+  .node-rect { stroke: #666; stroke-width: 1.2; cursor: move; }
+  .node-rect.selected { stroke: #1a6bd6; stroke-width: 2.5; }
+  .node-label { font-size: 13px; text-anchor: middle; dominant-baseline: middle; pointer-events: none; fill: #222; }
+  .node-desc { font-size: 10px; text-anchor: middle; dominant-baseline: middle; pointer-events: none; fill: #777; }
+  .node-draft-target { stroke: #1a9c4b !important; stroke-width: 2.5 !important; }
+
+  .edge-path { fill: none; stroke: #555; stroke-width: 2; cursor: pointer; }
+  .edge-path.selected { stroke: #1a6bd6; stroke-width: 3; }
+  .edge-hit { fill: none; stroke: transparent; stroke-width: 14; cursor: pointer; }
+  .edge-label-bg { fill: #fff; stroke: #ccc; stroke-width: 1; }
+  .edge-label { font-size: 13px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+  .edge-label.plus { fill: #1a6bd6; }
+  .edge-label.minus { fill: #c0392b; }
+
+  .loop-badge circle { fill: #fff6d8; stroke: #c99a1a; stroke-width: 1.5; cursor: move; }
+  .loop-badge.selected circle { stroke: #1a6bd6; stroke-width: 2.5; }
+  .loop-badge text.loop-code { font-size: 13px; font-weight: 700; text-anchor: middle; dominant-baseline: middle; fill: #7a5b00; pointer-events: none; }
+  .loop-badge text.loop-title { font-size: 10px; text-anchor: middle; fill: #666; pointer-events: none; }
+
+  .tag-chip-text { font-size: 10px; text-anchor: middle; dominant-baseline: middle; pointer-events: none; font-weight: 600; }
+  #proppanel .taghint { font-size: 11px; color: #999; margin-top: 2px; }
+
+  #authbar { display: flex; align-items: center; gap: 6px; }
+  #authbar input[type=email] { border: 1px solid #ccc; border-radius: 6px; padding: 6px 8px; font-size: 13px; width: 190px; }
+  #authbar button { border: 1px solid #ccc; background: #fff; border-radius: 6px; padding: 6px 10px; font-size: 13px; cursor: pointer; }
+  #authbar button:hover { background: #f2f2f2; }
+  #authbar .useremail { font-size: 12px; color: #444; }
+
+  #savenote.status-saved { color: #1a7a3c; background: #eafff0; border-color: #b7ecc6; }
+  #savenote.status-saving { color: #555; background: #f2f2f2; border-color: #ddd; }
+  #savenote.status-error { color: #a02020; background: #ffecec; border-color: #f3b8b8; }
+  #savenote.status-unsaved { color: #b26a00; background: #fff6e5; border-color: #ffdf9e; }
+
+  #diagramModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); align-items: center; justify-content: center; z-index: 50; }
+  #diagramModal .box { background: #fff; border-radius: 10px; padding: 20px; width: 440px; max-height: 70vh; overflow-y: auto; }
+  #diagramModal h3 { margin: 0 0 12px; font-size: 15px; }
+  .diagram-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee; gap: 10px; }
+  .diagram-row .meta { font-size: 12px; color: #999; }
+  .diagram-row .name { font-size: 13px; }
+  .diagram-row button { border: 1px solid #ccc; background: #fff; border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="topbar">
+    <input id="title" type="text" value="無題のループ図" />
+    <button id="btn-sample">サンプルを読み込む</button>
+    <button id="btn-clear">新規作成(クリア)</button>
+    <button id="btn-save">今すぐ保存</button>
+    <button id="btn-mydiagrams">マイ図一覧</button>
+    <div class="spacer"></div>
+    <div id="authbar"></div>
+    <span id="savenote">読み込み中…</span>
+  </div>
+
+  <div id="diagramModal">
+    <div class="box">
+      <h3>マイ図一覧</h3>
+      <div id="diagramList"></div>
+      <button id="btn-close-modal" style="margin-top:14px;">閉じる</button>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="toolbar">
+      <button data-tool="select" class="active" title="選択"><span class="ic">&#9733;</span>選択</button>
+      <button data-tool="add-node" title="ノード追加"><span class="ic">&#9633;</span>ノード</button>
+      <button data-tool="add-edge" title="矢印追加"><span class="ic">&#8594;</span>矢印</button>
+      <button data-tool="add-loop" title="ループラベル追加"><span class="ic">R</span>ループ</button>
+      <hr>
+      <button id="btn-zoomin" title="拡大"><span class="ic">+</span>拡大</button>
+      <button id="btn-zoomout" title="縮小"><span class="ic">-</span>縮小</button>
+      <hr>
+      <button id="btn-undo" title="元に戻す"><span class="ic">&#8630;</span>戻す</button>
+      <button id="btn-redo" title="やり直し"><span class="ic">&#8631;</span>進む</button>
+    </div>
+
+    <div id="canvas-wrap">
+      <svg id="canvas">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#555"></path>
+          </marker>
+          <marker id="arrow-selected" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#1a6bd6"></path>
+          </marker>
+        </defs>
+        <g id="viewport"></g>
+      </svg>
+      <div id="hint"></div>
+      <div id="legend">
+        <div><b>+</b>：増えると増える／減ると減る</div>
+        <div><b>-</b>：増えると減る／減ると増える</div>
+      </div>
+    </div>
+
+    <div id="proppanel"></div>
+  </div>
+
+  <div id="statusbar">
+    <span><span class="dot"></span>ローカル試作版</span>
+    <span id="stat-nodes">ノード: 0</span>
+    <span id="stat-edges">矢印: 0</span>
+    <span id="stat-zoom">ズーム: 100%</span>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function(){
+  "use strict";
+
+  var SUPABASE_URL = 'https://uymrxblhklxcuvkuhoee.supabase.co';
+  var SUPABASE_KEY = 'sb_publishable_AxaBEmNnCI3z6DeIGss6SA_KgfYrl55';
+  var sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
+  var currentUser = null;
+  var currentDiagramId = null;
+  var saveTimer = null;
+
+  var svg = document.getElementById('canvas');
+  var viewport = document.getElementById('viewport');
+  var proppanel = document.getElementById('proppanel');
+  var hintEl = document.getElementById('hint');
+  var titleInput = document.getElementById('title');
+
+  var state = {
+    title: "無題のループ図",
+    nodes: [],
+    edges: [],
+    loopLabels: [],
+    nextId: 1
+  };
+
+  var view = { x: 0, y: 0, scale: 1 };
+  var tool = 'select';
+  var selected = { type: null, id: null };
+  var edgeDraftSource = null;
+  var history = [];
+  var future = [];
+  var isPanning = false;
+  var panStart = null;
+  var dragging = null;
+
+  function newId(prefix){
+    var id = prefix + '_' + state.nextId;
+    state.nextId += 1;
+    return id;
+  }
+
+  function snapshot(){
+    return JSON.stringify(state);
+  }
+
+  function pushHistory(){
+    history.push(snapshot());
+    if (history.length > 60) history.shift();
+    future = [];
+    scheduleAutosave();
+  }
+
+  function undo(){
+    if (history.length === 0) return;
+    future.push(snapshot());
+    state = JSON.parse(history.pop());
+    titleInput.value = state.title;
+    selected = { type: null, id: null };
+    render();
+  }
+
+  function redo(){
+    if (future.length === 0) return;
+    history.push(snapshot());
+    state = JSON.parse(future.pop());
+    titleInput.value = state.title;
+    selected = { type: null, id: null };
+    render();
+  }
+
+  var preEditSnap = null;
+  function attachUndoableFocusBlur(el){
+    if (!el) return;
+    el.addEventListener('focus', function(){ preEditSnap = snapshot(); });
+    el.addEventListener('blur', function(){
+      if (preEditSnap !== null){
+        var cur = snapshot();
+        if (cur !== preEditSnap){
+          history.push(preEditSnap);
+          if (history.length > 60) history.shift();
+          future = [];
+        }
+      }
+      preEditSnap = null;
+    });
+  }
+
+  function escHtmlEarly(s){
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function setSaveStatus(status, extra){
+    var el = document.getElementById('savenote');
+    el.classList.remove('status-saved','status-saving','status-error','status-unsaved');
+    if (status === 'no-login'){
+      el.textContent = 'ログインすると保存できます(今は保存されません)';
+    } else if (status === 'ready'){
+      el.textContent = '「今すぐ保存」を押すと保存されます';
+    } else if (status === 'saving'){
+      el.textContent = '保存中…';
+      el.classList.add('status-saving');
+    } else if (status === 'saved'){
+      var t = new Date();
+      el.textContent = '保存済み(' + t.getHours() + ':' + String(t.getMinutes()).padStart(2,'0') + ')';
+      el.classList.add('status-saved');
+    } else if (status === 'unsaved'){
+      el.textContent = '未保存の変更があります…';
+      el.classList.add('status-unsaved');
+    } else if (status === 'error'){
+      el.textContent = '保存エラー: ' + (extra || '通信を確認してください');
+      el.classList.add('status-error');
+    } else {
+      el.textContent = '';
+    }
+  }
+
+  function scheduleAutosave(){
+    if (!sb) { setSaveStatus('error', 'Supabaseに接続できません'); return; }
+    if (!currentUser){ setSaveStatus('no-login'); return; }
+    if (!currentDiagramId){ setSaveStatus('ready'); return; }
+    setSaveStatus('unsaved');
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(doSave, 1500);
+  }
+
+  function doSave(){
+    if (!sb || !currentUser) { setSaveStatus('no-login'); return; }
+    setSaveStatus('saving');
+    var payload = { title: state.title, data: { nodes: state.nodes, edges: state.edges, loopLabels: state.loopLabels } };
+    var req;
+    if (currentDiagramId){
+      req = sb.from('diagrams').update(payload).eq('id', currentDiagramId);
+    } else {
+      payload.owner_id = currentUser.id;
+      req = sb.from('diagrams').insert(payload).select().single();
+    }
+    req.then(function(res){
+      if (res.error) { setSaveStatus('error', res.error.message); return; }
+      if (!currentDiagramId && res.data){
+        currentDiagramId = res.data.id;
+        try {
+          var url = new URL(window.location.href);
+          url.searchParams.set('d', currentDiagramId);
+          window.history.replaceState({}, '', url);
+        } catch(e){}
+      }
+      setSaveStatus('saved');
+    }).catch(function(err){
+      setSaveStatus('error', err && err.message);
+    });
+  }
+
+  function loadDiagramById(id){
+    if (!sb) return;
+    setSaveStatus('saving');
+    sb.from('diagrams').select('*').eq('id', id).single().then(function(res){
+      if (res.error || !res.data){
+        alert('図を開けませんでした(権限がないか、削除された可能性があります)');
+        setSaveStatus(currentUser ? 'ready' : 'no-login');
+        return;
+      }
+      var row = res.data;
+      state.title = row.title;
+      state.nodes = (row.data && row.data.nodes) || [];
+      state.edges = (row.data && row.data.edges) || [];
+      state.loopLabels = (row.data && row.data.loopLabels) || [];
+      currentDiagramId = row.id;
+      titleInput.value = state.title;
+      selected = { type: null, id: null };
+      history = [];
+      future = [];
+      render();
+      setSaveStatus('saved');
+    }).catch(function(err){
+      setSaveStatus('error', err && err.message);
+    });
+  }
+
+  function listMyDiagrams(){
+    if (!sb || !currentUser) return Promise.resolve([]);
+    return sb.from('diagrams').select('id,title,updated_at').eq('owner_id', currentUser.id).order('updated_at', { ascending: false }).then(function(res){
+      if (res.error) { console.error(res.error); return []; }
+      return res.data || [];
+    });
+  }
+
+  function openDiagramModal(){
+    if (!currentUser) { alert('先にログインしてください'); return; }
+    document.getElementById('diagramModal').style.display = 'flex';
+    var listEl = document.getElementById('diagramList');
+    listEl.textContent = '読み込み中…';
+    listMyDiagrams().then(function(rows){
+      if (!rows.length) { listEl.textContent = '保存された図はまだありません。'; return; }
+      listEl.innerHTML = '';
+      rows.forEach(function(r){
+        var row = document.createElement('div');
+        row.className = 'diagram-row';
+        var d = new Date(r.updated_at);
+        var meta = d.getFullYear() + '/' + (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
+        row.innerHTML = '<div><div class="name">' + escHtmlEarly(r.title || '無題のループ図') + '</div><div class="meta">' + meta + '</div></div>';
+        var openBtn = document.createElement('button');
+        openBtn.textContent = '開く';
+        openBtn.addEventListener('click', function(){ closeDiagramModal(); loadDiagramById(r.id); });
+        row.appendChild(openBtn);
+        listEl.appendChild(row);
+      });
+    });
+  }
+
+  function closeDiagramModal(){
+    document.getElementById('diagramModal').style.display = 'none';
+  }
+
+  function renderAuthBar(){
+    var el = document.getElementById('authbar');
+    if (currentUser){
+      el.innerHTML = '<span class="useremail">' + escHtmlEarly(currentUser.email || '') + '</span><button id="btn-logout">ログアウト</button>';
+      document.getElementById('btn-logout').addEventListener('click', function(){
+        sb.auth.signOut().then(function(){ currentUser = null; currentDiagramId = null; renderAuthBar(); setSaveStatus('no-login'); });
+      });
+    } else {
+      el.innerHTML = '<input type="email" id="auth-email" placeholder="メールアドレス"><button id="btn-send-link">ログインリンクを送信</button>';
+      document.getElementById('btn-send-link').addEventListener('click', function(){
+        var email = document.getElementById('auth-email').value.trim();
+        if (!email) { alert('メールアドレスを入力してください'); return; }
+        if (!sb) { alert('Supabaseに接続できません'); return; }
+        var redirectTo = window.location.href.split('#')[0];
+        sb.auth.signInWithOtp({ email: email, options: { emailRedirectTo: redirectTo } }).then(function(res){
+          if (res.error) alert('送信に失敗しました: ' + res.error.message);
+          else alert('ログイン用のリンクを ' + email + ' 宛に送信しました。メールを確認してリンクをクリックしてください。');
+        });
+      });
+    }
+  }
+
+  function initAuth(){
+    if (!sb) { setSaveStatus('error', 'Supabaseに接続できません'); return; }
+    sb.auth.onAuthStateChange(function(event, session){
+      currentUser = session ? session.user : null;
+      renderAuthBar();
+      setSaveStatus(currentUser ? (currentDiagramId ? 'saved' : 'ready') : 'no-login');
+    });
+    sb.auth.getSession().then(function(res){
+      currentUser = res.data && res.data.session ? res.data.session.user : null;
+      renderAuthBar();
+      setSaveStatus(currentUser ? (currentDiagramId ? 'saved' : 'ready') : 'no-login');
+      var params = new URLSearchParams(window.location.search);
+      var d = params.get('d');
+      if (d) loadDiagramById(d);
+    });
+  }
+
+  function getNode(id){
+    for (var i = 0; i < state.nodes.length; i++) if (state.nodes[i].id === id) return state.nodes[i];
+    return null;
+  }
+  function getEdge(id){
+    for (var i = 0; i < state.edges.length; i++) if (state.edges[i].id === id) return state.edges[i];
+    return null;
+  }
+  function getLoop(id){
+    for (var i = 0; i < state.loopLabels.length; i++) if (state.loopLabels[i].id === id) return state.loopLabels[i];
+    return null;
+  }
+
+  function screenToWorld(evt){
+    var rect = svg.getBoundingClientRect();
+    var sx = evt.clientX - rect.left;
+    var sy = evt.clientY - rect.top;
+    return { x: (sx - view.x) / view.scale, y: (sy - view.y) / view.scale };
+  }
+
+  function applyViewTransform(){
+    viewport.setAttribute('transform', 'translate(' + view.x + ',' + view.y + ') scale(' + view.scale + ')');
+    document.getElementById('stat-zoom').textContent = 'ズーム: ' + Math.round(view.scale * 100) + '%';
+  }
+
+  function setTool(t){
+    tool = t;
+    edgeDraftSource = null;
+    var buttons = document.querySelectorAll('#toolbar button[data-tool]');
+    for (var i = 0; i < buttons.length; i++){
+      buttons[i].classList.toggle('active', buttons[i].getAttribute('data-tool') === t);
+    }
+    svg.classList.remove('mode-add-node','mode-add-edge','mode-add-loop','mode-pan');
+    if (t === 'add-node') svg.classList.add('mode-add-node');
+    if (t === 'add-edge') svg.classList.add('mode-add-edge');
+    if (t === 'add-loop') svg.classList.add('mode-add-loop');
+    updateHint();
+  }
+
+  function updateHint(){
+    var msgs = {
+      'select': '要素をクリックして選択・ドラッグで移動できます。背景をドラッグすると画面を動かせます。',
+      'add-node': 'キャンバスをクリックするとノードを追加します。',
+      'add-edge': '始点ノード→終点ノードの順にクリックすると矢印を作成します。',
+      'add-loop': 'キャンバスをクリックするとループラベル(R/B)を追加します。'
+    };
+    hintEl.textContent = msgs[tool] || '';
+  }
+
+  function svgEl(tag, attrs){
+    var el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (var k in attrs) el.setAttribute(k, attrs[k]);
+    return el;
+  }
+
+  var tagPalette = [
+    ['#e6f1fb','#0c447c'], ['#eaf3de','#27500a'], ['#faeeda','#633806'],
+    ['#fbeaf0','#72243e'], ['#eeedfe','#3c3489'], ['#e1f5ee','#085041'],
+    ['#faece7','#712b13'], ['#fcebeb','#791f1f']
+  ];
+  function tagColor(tag){
+    var hash = 0;
+    for (var i = 0; i < tag.length; i++) hash = (hash * 31 + tag.charCodeAt(i)) % 997;
+    if (hash < 0) hash += 997;
+    return tagPalette[hash % tagPalette.length];
+  }
+
+  function nodeBoundaryPoint(node, towardX, towardY){
+    var cx = node.x + node.width / 2, cy = node.y + node.height / 2;
+    var rx = node.width / 2, ry = node.height / 2;
+    var dx = towardX - cx, dy = towardY - cy;
+    if (dx === 0 && dy === 0) return { x: cx, y: cy };
+    var t = 1 / Math.sqrt(Math.pow(dx / rx, 2) + Math.pow(dy / ry, 2));
+    t = Math.min(t, 1);
+    return { x: cx + dx * t, y: cy + dy * t };
+  }
+
+  function edgeGeometry(edge){
+    var s = getNode(edge.sourceNodeId), t = getNode(edge.targetNodeId);
+    if (!s || !t) return null;
+    var scx = s.x + s.width/2, scy = s.y + s.height/2;
+    var tcx = t.x + t.width/2, tcy = t.y + t.height/2;
+    var mx = (scx+tcx)/2, my = (scy+tcy)/2;
+    var dx = tcx-scx, dy = tcy-scy;
+    var dist = Math.sqrt(dx*dx+dy*dy) || 1;
+    var nx = -dy/dist, ny = dx/dist;
+    var curve = edge.curve || 0;
+    var cx = mx + nx*curve*dist*0.3;
+    var cy = my + ny*curve*dist*0.3;
+    var sp = nodeBoundaryPoint(s, cx, cy);
+    var tp = nodeBoundaryPoint(t, cx, cy);
+    var labelX = 0.25*sp.x + 0.5*cx + 0.25*tp.x;
+    var labelY = 0.25*sp.y + 0.5*cy + 0.25*tp.y;
+    return { sx: sp.x, sy: sp.y, tx: tp.x, ty: tp.y, cx: cx, cy: cy, labelX: labelX, labelY: labelY };
+  }
+
+  function deleteNode(id){
+    state.nodes = state.nodes.filter(function(n){ return n.id !== id; });
+    state.edges = state.edges.filter(function(e){ return e.sourceNodeId !== id && e.targetNodeId !== id; });
+  }
+  function deleteEdge(id){
+    state.edges = state.edges.filter(function(e){ return e.id !== id; });
+  }
+  function deleteLoop(id){
+    state.loopLabels = state.loopLabels.filter(function(l){ return l.id !== id; });
+  }
+
+  function selectItem(type, id){
+    selected = { type: type, id: id };
+    render();
+  }
+
+  function onCanvasMouseDown(evt){
+    if (evt.target === svg || evt.target === viewport){
+      var pos = screenToWorld(evt);
+      if (tool === 'add-node'){
+        pushHistory();
+        var n = { id: newId('node'), label: 'ノード', description: '', x: pos.x-70, y: pos.y-28, width: 140, height: 56, color: '#ffffff', tags: [] };
+        state.nodes.push(n);
+        selectItem('node', n.id);
+        return;
+      }
+      if (tool === 'add-loop'){
+        pushHistory();
+        var lp = { id: newId('loop'), label: 'R1', type: 'reinforcing', title: '', description: '', x: pos.x, y: pos.y };
+        state.loopLabels.push(lp);
+        selectItem('loop', lp.id);
+        return;
+      }
+      if (tool === 'add-edge'){
+        edgeDraftSource = null;
+        render();
+        return;
+      }
+      if (tool === 'select'){
+        isPanning = true;
+        panStart = { x: evt.clientX - view.x, y: evt.clientY - view.y };
+        selected = { type: null, id: null };
+        render();
+      }
+    }
+  }
+
+  function onCanvasMouseMove(evt){
+    if (isPanning && panStart){
+      view.x = evt.clientX - panStart.x;
+      view.y = evt.clientY - panStart.y;
+      applyViewTransform();
+      return;
+    }
+    if (dragging){
+      var pos = screenToWorld(evt);
+      var obj = dragging.obj;
+      obj.x = pos.x - dragging.offX;
+      obj.y = pos.y - dragging.offY;
+      renderLight();
+    }
+  }
+
+  function onCanvasMouseUp(){
+    isPanning = false;
+    panStart = null;
+    if (dragging){
+      dragging = null;
+      scheduleAutosave();
+    }
+  }
+
+  function startDrag(evt, obj){
+    if (tool !== 'select') return;
+    evt.stopPropagation();
+    pushHistory();
+    var pos = screenToWorld(evt);
+    dragging = { obj: obj, offX: pos.x - obj.x, offY: pos.y - obj.y };
+  }
+
+  function onNodeClick(evt, node){
+    evt.stopPropagation();
+    if (tool === 'add-edge'){
+      if (edgeDraftSource === null){
+        edgeDraftSource = node.id;
+        render();
+      } else if (edgeDraftSource === node.id){
+        edgeDraftSource = null;
+        render();
+      } else {
+        pushHistory();
+        var e = { id: newId('edge'), sourceNodeId: edgeDraftSource, targetNodeId: node.id, polarity: 'unset', description: '', curve: 0 };
+        state.edges.push(e);
+        edgeDraftSource = null;
+        selectItem('edge', e.id);
+      }
+      return;
+    }
+    if (tool === 'select'){
+      selectItem('node', node.id);
+    }
+  }
+
+  function onEdgeClick(evt, edge){
+    evt.stopPropagation();
+    if (tool === 'select') selectItem('edge', edge.id);
+  }
+
+  function onLoopClick(evt, loop){
+    evt.stopPropagation();
+    if (tool === 'select') selectItem('loop', loop.id);
+  }
+
+  function renderNode(node){
+    var g = svgEl('g', { class: 'node-group' });
+    var isSel = selected.type === 'node' && selected.id === node.id;
+    var isDraftTarget = tool === 'add-edge' && edgeDraftSource === node.id;
+    var rect = svgEl('rect', {
+      x: node.x, y: node.y, width: node.width, height: node.height, rx: 10,
+      fill: node.color || '#ffffff',
+      class: 'node-rect' + (isSel ? ' selected' : '') + (isDraftTarget ? ' node-draft-target' : '')
+    });
+    rect.addEventListener('mousedown', function(evt){ startDrag(evt, node); });
+    rect.addEventListener('click', function(evt){ onNodeClick(evt, node); });
+    g.appendChild(rect);
+
+    var label = svgEl('text', { x: node.x + node.width/2, y: node.y + node.height/2 - (node.description ? 8 : 0), class: 'node-label' });
+    label.textContent = node.label || '(無題)';
+    g.appendChild(label);
+
+    if (node.description){
+      var desc = svgEl('text', { x: node.x + node.width/2, y: node.y + node.height/2 + 12, class: 'node-desc' });
+      desc.textContent = node.description.length > 22 ? node.description.slice(0,21)+'…' : node.description;
+      g.appendChild(desc);
+    }
+
+    if (node.tags && node.tags.length){
+      var chipY = node.y + node.height + 6;
+      var chipX = node.x;
+      node.tags.forEach(function(tag){
+        var label = tag.length > 10 ? tag.slice(0,9)+'…' : tag;
+        var w = label.length * 6.5 + 16;
+        var colors = tagColor(tag);
+        var chip = svgEl('rect', { x: chipX, y: chipY, width: w, height: 18, rx: 9, fill: colors[0] });
+        g.appendChild(chip);
+        var t = svgEl('text', { x: chipX + w/2, y: chipY + 9, class: 'tag-chip-text', fill: colors[1] });
+        t.textContent = label;
+        g.appendChild(t);
+        chipX += w + 4;
+      });
+    }
+    return g;
+  }
+
+  function renderEdge(edge){
+    var geo = edgeGeometry(edge);
+    if (!geo) return null;
+    var g = svgEl('g', { class: 'edge-group' });
+    var isSel = selected.type === 'edge' && selected.id === edge.id;
+    var d = 'M ' + geo.sx + ' ' + geo.sy + ' Q ' + geo.cx + ' ' + geo.cy + ' ' + geo.tx + ' ' + geo.ty;
+    var path = svgEl('path', {
+      d: d, class: 'edge-path' + (isSel ? ' selected' : ''),
+      'marker-end': isSel ? 'url(#arrow-selected)' : 'url(#arrow)'
+    });
+    g.appendChild(path);
+
+    var hit = svgEl('path', { d: d, class: 'edge-hit' });
+    hit.addEventListener('click', function(evt){ onEdgeClick(evt, edge); });
+    g.appendChild(hit);
+
+    if (edge.polarity === '+' || edge.polarity === '-'){
+      var bg = svgEl('circle', { cx: geo.labelX, cy: geo.labelY, r: 10, class: 'edge-label-bg' });
+      g.appendChild(bg);
+      var lbl = svgEl('text', { x: geo.labelX, y: geo.labelY, class: 'edge-label ' + (edge.polarity === '+' ? 'plus' : 'minus') });
+      lbl.textContent = edge.polarity;
+      g.appendChild(lbl);
+    }
+    return g;
+  }
+
+  function renderLoop(loop){
+    var g = svgEl('g', { class: 'loop-badge' + (selected.type === 'loop' && selected.id === loop.id ? ' selected' : '') });
+    var circle = svgEl('circle', { cx: loop.x, cy: loop.y, r: 20 });
+    circle.addEventListener('mousedown', function(evt){ startDrag(evt, loop); });
+    circle.addEventListener('click', function(evt){ onLoopClick(evt, loop); });
+    g.appendChild(circle);
+    var code = svgEl('text', { x: loop.x, y: loop.y - (loop.title ? 3 : 0), class: 'loop-code' });
+    code.textContent = loop.label || '';
+    g.appendChild(code);
+    if (loop.title){
+      var t = svgEl('text', { x: loop.x, y: loop.y + 32, class: 'loop-title' });
+      t.textContent = loop.title.length > 16 ? loop.title.slice(0,15)+'…' : loop.title;
+      g.appendChild(t);
+    }
+    return g;
+  }
+
+  function renderLight(){
+    while (viewport.firstChild) viewport.removeChild(viewport.firstChild);
+    state.edges.forEach(function(e){ var el = renderEdge(e); if (el) viewport.appendChild(el); });
+    state.nodes.forEach(function(n){ viewport.appendChild(renderNode(n)); });
+    state.loopLabels.forEach(function(l){ viewport.appendChild(renderLoop(l)); });
+  }
+
+  function renderPropPanel(){
+    proppanel.innerHTML = '';
+    if (selected.type === 'node'){
+      var node = getNode(selected.id);
+      if (!node) { selected = {type:null,id:null}; proppanel.innerHTML = '<div class="empty">要素を選択すると、ここに詳細が表示されます。</div>'; return; }
+      proppanel.innerHTML =
+        '<h3>ノード</h3>' +
+        '<label>ノード名</label><input type="text" id="p-label" value="' + escAttr(node.label) + '">' +
+        '<label>説明</label><textarea id="p-desc">' + escHtml(node.description||'') + '</textarea>' +
+        '<div class="row2"><div><label>色</label><input type="color" id="p-color" value="' + (node.color||'#ffffff') + '"></div></div>' +
+        '<label>タグ(カンマ区切りで複数可)</label><input type="text" id="p-tags" value="' + escAttr((node.tags||[]).join(', ')) + '" placeholder="例: 重要, リスク">' +
+        '<div class="taghint">ノードの下に色付きラベルとして表示されます</div>' +
+        '<button id="delbtn">このノードを削除</button>';
+      document.getElementById('p-label').addEventListener('input', function(e){ node.label = e.target.value; renderLight(); scheduleAutosave(); });
+      document.getElementById('p-desc').addEventListener('input', function(e){ node.description = e.target.value; renderLight(); scheduleAutosave(); });
+      document.getElementById('p-color').addEventListener('input', function(e){ node.color = e.target.value; renderLight(); scheduleAutosave(); });
+      document.getElementById('p-tags').addEventListener('input', function(e){
+        node.tags = e.target.value.split(',').map(function(s){ return s.trim(); }).filter(function(s){ return s.length > 0; });
+        renderLight();
+        scheduleAutosave();
+      });
+      attachUndoableFocusBlur(document.getElementById('p-label'));
+      attachUndoableFocusBlur(document.getElementById('p-desc'));
+      attachUndoableFocusBlur(document.getElementById('p-color'));
+      attachUndoableFocusBlur(document.getElementById('p-tags'));
+      document.getElementById('delbtn').addEventListener('click', function(){ pushHistory(); deleteNode(node.id); selected={type:null,id:null}; render(); });
+      return;
+    }
+    if (selected.type === 'edge'){
+      var edge = getEdge(selected.id);
+      if (!edge) { selected = {type:null,id:null}; proppanel.innerHTML = '<div class="empty">要素を選択すると、ここに詳細が表示されます。</div>'; return; }
+      var s = getNode(edge.sourceNodeId), t = getNode(edge.targetNodeId);
+      proppanel.innerHTML =
+        '<h3>矢印(因果関係)</h3>' +
+        '<label>始点</label><input type="text" value="' + escAttr(s?s.label:'?') + '" disabled>' +
+        '<label>終点</label><input type="text" value="' + escAttr(t?t.label:'?') + '" disabled>' +
+        '<label>極性</label>' +
+        '<select id="p-pol"><option value="unset">未設定</option><option value="+">+ (同方向)</option><option value="-">- (逆方向)</option></select>' +
+        '<label>説明</label><textarea id="p-desc">' + escHtml(edge.description||'') + '</textarea>' +
+        '<label>曲がり具合</label><input type="range" id="p-curve" min="-1" max="1" step="0.1" value="' + edge.curve + '">' +
+        '<button id="delbtn">この矢印を削除</button>';
+      document.getElementById('p-pol').value = edge.polarity;
+      attachUndoableFocusBlur(document.getElementById('p-pol'));
+      document.getElementById('p-pol').addEventListener('change', function(e){ edge.polarity = e.target.value; renderLight(); scheduleAutosave(); });
+      document.getElementById('p-desc').addEventListener('input', function(e){ edge.description = e.target.value; scheduleAutosave(); });
+      attachUndoableFocusBlur(document.getElementById('p-desc'));
+      document.getElementById('p-curve').addEventListener('input', function(e){ edge.curve = parseFloat(e.target.value); renderLight(); scheduleAutosave(); });
+      attachUndoableFocusBlur(document.getElementById('p-curve'));
+      document.getElementById('delbtn').addEventListener('click', function(){ pushHistory(); deleteEdge(edge.id); selected={type:null,id:null}; render(); });
+      return;
+    }
+    if (selected.type === 'loop'){
+      var loop = getLoop(selected.id);
+      if (!loop) { selected = {type:null,id:null}; proppanel.innerHTML = '<div class="empty">要素を選択すると、ここに詳細が表示されます。</div>'; return; }
+      proppanel.innerHTML =
+        '<h3>ループラベル</h3>' +
+        '<label>ラベル(例: R1, B1)</label><input type="text" id="p-code" value="' + escAttr(loop.label) + '">' +
+        '<label>種類</label>' +
+        '<select id="p-type"><option value="reinforcing">強化ループ (R)</option><option value="balancing">バランスループ (B)</option><option value="unclassified">未分類</option></select>' +
+        '<label>ループ名</label><input type="text" id="p-title" value="' + escAttr(loop.title) + '">' +
+        '<label>説明</label><textarea id="p-desc">' + escHtml(loop.description||'') + '</textarea>' +
+        '<button id="delbtn">このループラベルを削除</button>';
+      document.getElementById('p-type').value = loop.type;
+      document.getElementById('p-code').addEventListener('input', function(e){ loop.label = e.target.value; renderLight(); scheduleAutosave(); });
+      document.getElementById('p-type').addEventListener('change', function(e){ loop.type = e.target.value; scheduleAutosave(); });
+      document.getElementById('p-title').addEventListener('input', function(e){ loop.title = e.target.value; renderLight(); scheduleAutosave(); });
+      document.getElementById('p-desc').addEventListener('input', function(e){ loop.description = e.target.value; scheduleAutosave(); });
+      attachUndoableFocusBlur(document.getElementById('p-code'));
+      attachUndoableFocusBlur(document.getElementById('p-type'));
+      attachUndoableFocusBlur(document.getElementById('p-title'));
+      attachUndoableFocusBlur(document.getElementById('p-desc'));
+      document.getElementById('delbtn').addEventListener('click', function(){ pushHistory(); deleteLoop(loop.id); selected={type:null,id:null}; render(); });
+      return;
+    }
+    proppanel.innerHTML = '<div class="empty">要素を選択すると、ここに詳細が表示されます。<br><br>左のツールバーで「ノード」「矢印」「ループ」を選び、キャンバスをクリックすると追加できます。</div>';
+  }
+
+  function escHtml(s){
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function escAttr(s){
+    return escHtml(s).replace(/"/g,'&quot;');
+  }
+
+  function render(){
+    renderLight();
+    renderPropPanel();
+    document.getElementById('stat-nodes').textContent = 'ノード: ' + state.nodes.length;
+    document.getElementById('stat-edges').textContent = '矢印: ' + state.edges.length;
+    applyViewTransform();
+  }
+
+  function loadSample(){
+    pushHistory();
+    state.nodes = [
+      { id: 'node_s1', label: '忙しさ', description: '業務量や時間的圧迫の程度', x: 80, y: 160, width: 140, height: 56, color: '#ffffff', tags: ['主要因子'] },
+      { id: 'node_s2', label: 'ミス', description: '', x: 340, y: 60, width: 140, height: 56, color: '#ffffff', tags: ['リスク'] },
+      { id: 'node_s3', label: '手戻り', description: '', x: 340, y: 260, width: 140, height: 56, color: '#ffffff', tags: ['リスク'] }
+    ];
+    state.edges = [
+      { id: 'edge_s1', sourceNodeId: 'node_s1', targetNodeId: 'node_s2', polarity: '+', description: '忙しさが増えるとミスが増える', curve: -0.3 },
+      { id: 'edge_s2', sourceNodeId: 'node_s2', targetNodeId: 'node_s3', polarity: '+', description: 'ミスが増えると手戻りが増える', curve: 0 },
+      { id: 'edge_s3', sourceNodeId: 'node_s3', targetNodeId: 'node_s1', polarity: '+', description: '手戻りが増えるとさらに忙しくなる', curve: -0.3 }
+    ];
+    state.loopLabels = [
+      { id: 'loop_s1', label: 'R1', type: 'reinforcing', title: '忙しさの悪循環', description: '忙しさがミスと手戻りを通じてさらに忙しさを増やす', x: 260, y: 160 }
+    ];
+    state.title = '忙しさとミスの悪循環';
+    titleInput.value = state.title;
+    selected = { type: null, id: null };
+    render();
+  }
+
+  function clearAll(){
+    pushHistory();
+    state.nodes = [];
+    state.edges = [];
+    state.loopLabels = [];
+    state.title = '無題のループ図';
+    titleInput.value = state.title;
+    selected = { type: null, id: null };
+    render();
+  }
+
+  // wiring
+  document.querySelectorAll('#toolbar button[data-tool]').forEach(function(btn){
+    btn.addEventListener('click', function(){ setTool(btn.getAttribute('data-tool')); });
+  });
+  document.getElementById('btn-zoomin').addEventListener('click', function(){ view.scale = Math.min(view.scale * 1.2, 3); applyViewTransform(); });
+  document.getElementById('btn-zoomout').addEventListener('click', function(){ view.scale = Math.max(view.scale / 1.2, 0.3); applyViewTransform(); });
+  document.getElementById('btn-undo').addEventListener('click', undo);
+  document.getElementById('btn-redo').addEventListener('click', redo);
+  document.getElementById('btn-sample').addEventListener('click', loadSample);
+  document.getElementById('btn-clear').addEventListener('click', function(){ if (confirm('現在の内容を消去して新規作成しますか？')) { currentDiagramId = null; clearAll(); try { var url = new URL(window.location.href); url.searchParams.delete('d'); window.history.replaceState({}, '', url); } catch(e){} } });
+  document.getElementById('btn-save').addEventListener('click', doSave);
+  document.getElementById('btn-mydiagrams').addEventListener('click', openDiagramModal);
+  document.getElementById('btn-close-modal').addEventListener('click', closeDiagramModal);
+  titleInput.addEventListener('input', function(e){ state.title = e.target.value; scheduleAutosave(); });
+
+  svg.addEventListener('mousedown', onCanvasMouseDown);
+  window.addEventListener('mousemove', onCanvasMouseMove);
+  window.addEventListener('mouseup', onCanvasMouseUp);
+  svg.addEventListener('wheel', function(evt){
+    evt.preventDefault();
+    var factor = evt.deltaY < 0 ? 1.1 : 0.9;
+    view.scale = Math.min(Math.max(view.scale * factor, 0.3), 3);
+    applyViewTransform();
+  }, { passive: false });
+
+  window.addEventListener('keydown', function(evt){
+    var tag = (evt.target && evt.target.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if ((evt.key === 'Delete' || evt.key === 'Backspace') && selected.type){
+      pushHistory();
+      if (selected.type === 'node') deleteNode(selected.id);
+      if (selected.type === 'edge') deleteEdge(selected.id);
+      if (selected.type === 'loop') deleteLoop(selected.id);
+      selected = { type: null, id: null };
+      render();
+    }
+    if (evt.ctrlKey && evt.key === 'z'){ evt.preventDefault(); undo(); }
+    if (evt.ctrlKey && evt.key === 'y'){ evt.preventDefault(); redo(); }
+  });
+
+  updateHint();
+  render();
+  initAuth();
+})();
+</script>
+</body>
+</html>
