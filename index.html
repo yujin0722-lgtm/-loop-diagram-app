@@ -426,6 +426,38 @@
         openBtn.textContent = '開く';
         openBtn.addEventListener('click', function(){ closeDiagramModal(); loadDiagramById(r.id); });
         row.appendChild(openBtn);
+
+        var delBtn = document.createElement('button');
+        delBtn.textContent = '削除';
+        delBtn.style.color = '#a02050';
+        delBtn.style.borderColor = '#e3a1b8';
+        delBtn.addEventListener('click', function(){
+          if (!confirm('「' + (r.title || '無題のループ図') + '」を削除しますか？この操作は取り消せません。')) return;
+          sb.from('diagrams').delete().eq('id', r.id).then(function(res){
+            if (res.error){ alert('削除に失敗しました: ' + res.error.message); return; }
+            if (currentDiagramId === r.id){
+              currentDiagramId = null;
+              currentDiagramOwnerId = null;
+              currentShareSettings = 'private';
+              readOnlyMode = false;
+              disconnectRealtime();
+              clearAll();
+              renderShareUI();
+              try {
+                var url4 = new URL(window.location.href);
+                url4.searchParams.delete('d');
+                window.history.replaceState({}, '', url4);
+              } catch(e){}
+              setSaveStatus(currentUser ? 'ready' : 'no-login');
+            }
+            row.remove();
+            if (!listEl.children.length){ listEl.textContent = '保存された図はまだありません。'; }
+          }).catch(function(err){
+            alert('削除に失敗しました: ' + (err && err.message ? err.message : JSON.stringify(err)));
+          });
+        });
+        row.appendChild(delBtn);
+
         listEl.appendChild(row);
       });
     });
