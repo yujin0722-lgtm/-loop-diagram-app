@@ -98,7 +98,7 @@
   #statusbar .dot.offline { background: #c0392b; }
 
   #presence-list { display: flex; gap: 4px; }
-  .presence-chip { width: 24px; height: 24px; border-radius: 50%; background: #1a6bd6; color: #fff; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+  .presence-chip { height: 24px; border-radius: 12px; background: #1a6bd6; color: #fff; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; padding: 0 10px; white-space: nowrap; }
 
   #share-select { border: 1px solid #ccc; background: #fff; border-radius: 6px; padding: 6px 8px; font-size: 12px; cursor: pointer; }
   #readonly-badge { font-size: 12px; color: #0a5fa8; background: #eaf4ff; border: 1px solid #b8dcff; padding: 4px 10px; border-radius: 6px; }
@@ -580,16 +580,22 @@
 
   function renderPresence(){
     var keys = Object.keys(presenceUsers);
-    document.getElementById('stat-editors').textContent = '編集中: ' + keys.length + '人';
+    document.getElementById('stat-editors').textContent = '接続中: ' + keys.length + '人';
     var listEl = document.getElementById('presence-list');
     listEl.innerHTML = '';
     keys.forEach(function(key){
       var entries = presenceUsers[key];
       var email = (entries && entries[0] && entries[0].email) || key;
+      var localPart = email.indexOf('@') > -1 ? email.slice(0, email.indexOf('@')) : email;
+      var displayName = localPart.length > 12 ? localPart.slice(0, 11) + '…' : localPart;
+      var joinedAt = entries && entries[0] && entries[0].joinedAt;
       var chip = document.createElement('span');
       chip.className = 'presence-chip';
-      chip.title = email;
-      chip.textContent = (email.charAt(0) || '?').toUpperCase();
+      chip.title = email + (joinedAt ? ('\n参加: ' + new Date(joinedAt).toLocaleTimeString('ja-JP')) : '');
+      chip.textContent = displayName;
+      var colors = tagColor(email);
+      chip.style.background = colors[0];
+      chip.style.color = colors[1];
       listEl.appendChild(chip);
     });
   }
