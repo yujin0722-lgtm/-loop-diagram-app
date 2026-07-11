@@ -570,8 +570,32 @@
     else if (op.type === 'share:update'){
       currentShareSettings = d.shareSettings;
       var isOwnerNow2 = currentUser && currentUser.id === currentDiagramOwnerId;
-      readOnlyMode = !isOwnerNow2 && !(currentShareSettings === 'link-edit' && currentUser);
-      renderShareUI();
+      if (currentShareSettings === 'private' && !isOwnerNow2){
+        alert('オーナーがこの図を非公開に変更しました。これ以上閲覧・編集できません。');
+        currentDiagramId = null;
+        currentDiagramOwnerId = null;
+        currentShareSettings = 'private';
+        readOnlyMode = false;
+        disconnectRealtime();
+        state.nodes = [];
+        state.edges = [];
+        state.loopLabels = [];
+        state.title = '無題のループ図';
+        titleInput.value = state.title;
+        selected = { type: null, id: null };
+        history = [];
+        future = [];
+        try {
+          var url3 = new URL(window.location.href);
+          url3.searchParams.delete('d');
+          window.history.replaceState({}, '', url3);
+        } catch(e){}
+        renderShareUI();
+        setSaveStatus(currentUser ? 'ready' : 'no-login');
+      } else {
+        readOnlyMode = !isOwnerNow2 && !(currentShareSettings === 'link-edit' && currentUser);
+        renderShareUI();
+      }
     }
     render();
   }
