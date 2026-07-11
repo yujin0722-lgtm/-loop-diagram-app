@@ -101,7 +101,10 @@
   .presence-chip { height: 24px; border-radius: 12px; background: #1a6bd6; color: #fff; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; padding: 0 10px; white-space: nowrap; }
 
   #share-select { border: 1px solid #ccc; background: #fff; border-radius: 6px; padding: 6px 8px; font-size: 12px; cursor: pointer; }
-  #readonly-badge { font-size: 12px; color: #0a5fa8; background: #eaf4ff; border: 1px solid #b8dcff; padding: 4px 10px; border-radius: 6px; }
+  #role-badge { font-size: 12px; padding: 4px 10px; border-radius: 6px; font-weight: 600; }
+  #role-badge.role-owner { color: #7a5b00; background: #fff6d8; border: 1px solid #e6c85a; }
+  #role-badge.role-editor { color: #0a5fa8; background: #eaf4ff; border: 1px solid #b8dcff; }
+  #role-badge.role-viewer { color: #555; background: #f2f2f2; border: 1px solid #ddd; }
 
   #privateNoticeModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); align-items: center; justify-content: center; z-index: 60; }
   #privateNoticeModal .box { background: #fff; border-radius: 10px; padding: 22px; width: 360px; box-shadow: 0 8px 30px rgba(0,0,0,0.25); }
@@ -125,7 +128,7 @@
       <option value="link-view">&#128065; リンクで閲覧可</option>
       <option value="link-edit">&#9998; リンクで編集可(ログイン必要)</option>
     </select>
-    <span id="readonly-badge" style="display:none;">閲覧のみ(編集不可)</span>
+    <span id="role-badge" style="display:none;"></span>
     <div class="spacer"></div>
     <div id="presence-list"></div>
     <div id="authbar"></div>
@@ -602,7 +605,7 @@
 
   function renderShareUI(){
     var sel = document.getElementById('share-select');
-    var badge = document.getElementById('readonly-badge');
+    var badge = document.getElementById('role-badge');
     var isOwner = currentUser && currentDiagramOwnerId && currentUser.id === currentDiagramOwnerId;
     if (sel){
       if (isOwner && currentDiagramId){
@@ -614,7 +617,22 @@
       }
     }
     if (badge){
-      badge.style.display = readOnlyMode ? '' : 'none';
+      badge.classList.remove('role-owner', 'role-editor', 'role-viewer');
+      if (!currentDiagramId){
+        badge.style.display = 'none';
+      } else if (isOwner){
+        badge.style.display = '';
+        badge.classList.add('role-owner');
+        badge.textContent = '👑 オーナー';
+      } else if (!readOnlyMode){
+        badge.style.display = '';
+        badge.classList.add('role-editor');
+        badge.textContent = '✏️ 共同編集者(オーナーではありません)';
+      } else {
+        badge.style.display = '';
+        badge.classList.add('role-viewer');
+        badge.textContent = '👁️ 閲覧のみ(編集不可)';
+      }
     }
     if (titleInput) titleInput.readOnly = readOnlyMode;
     ['btn-save','btn-clear','btn-sample','btn-undo','btn-redo'].forEach(function(id){
