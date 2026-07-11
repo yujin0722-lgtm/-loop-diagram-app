@@ -91,6 +91,13 @@
   .diagram-row .meta { font-size: 12px; color: #999; }
   .diagram-row .name { font-size: 13px; }
   .diagram-row button { border: 1px solid #ccc; background: #fff; border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer; }
+
+  #statusbar .dot.online { background: #4caf50; }
+  #statusbar .dot.reconnecting { background: #e0a800; }
+  #statusbar .dot.offline { background: #c0392b; }
+
+  #presence-list { display: flex; gap: 4px; }
+  .presence-chip { width: 24px; height: 24px; border-radius: 50%; background: #1a6bd6; color: #fff; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
 </style>
 </head>
 <body>
@@ -103,6 +110,7 @@
     <button id="btn-save">今すぐ保存</button>
     <button id="btn-mydiagrams">マイ図一覧</button>
     <div class="spacer"></div>
+    <div id="presence-list"></div>
     <div id="authbar"></div>
     <span id="savenote">読み込み中…</span>
   </div>
@@ -152,7 +160,8 @@
   </div>
 
   <div id="statusbar">
-    <span><span class="dot"></span>ローカル試作版</span>
+    <span><span class="dot offline" id="conn-dot"></span><span id="conn-label">オフライン</span></span>
+    <span id="stat-editors">編集中: 0人</span>
     <span id="stat-nodes">ノード: 0</span>
     <span id="stat-edges">矢印: 0</span>
     <span id="stat-zoom">ズーム: 100%</span>
@@ -172,6 +181,9 @@
   var currentUser = null;
   var currentDiagramId = null;
   var saveTimer = null;
+  var clientId = 'c_' + Math.random().toString(36).slice(2);
+  var realtimeChannel = null;
+  var presenceUsers = {};
 
   var svg = document.getElementById('canvas');
   var viewport = document.getElementById('viewport');
@@ -307,6 +319,7 @@
           url.searchParams.set('d', currentDiagramId);
           window.history.replaceState({}, '', url);
         } catch(e){}
+        connectRealtime(currentDiagramId);
       }
       setSaveStatus('saved');
     }).catch(function(err){
@@ -335,6 +348,7 @@
       future = [];
       render();
       setSaveStatus('saved');
+      connectRealtime(currentDiagramId);
     }).catch(function(err){
       setSaveStatus('error', err && err.message);
     });
@@ -380,7 +394,7 @@
     if (currentUser){
       el.innerHTML = '<span class="useremail">' + escHtmlEarly(currentUser.email || '') + '</span><button id="btn-logout">ログアウト</button>';
       document.getElementById('btn-logout').addEventListener('click', function(){
-        sb.auth.signOut().then(function(){ currentUser = null; currentDiagramId = null; renderAuthBar(); setSaveStatus('no-login'); });
+        sb.auth.signOut().then(function(){ currentUser = null; currentDiagramId = null; disconnectRealtime(); renderAuthBar(); setSaveStatus('no-login'); });
       });
     } else {
       el.innerHTML = '<input type="email" id="auth-email" placeholder="メールアドレス"><button id="btn-send-link">ログインリンクを送信</button>';
@@ -412,6 +426,88 @@
       var d = params.get('d');
       if (d) loadDiagramById(d);
     });
+  }
+
+  function updateConnStatus(s){
+    var dot = document.getElementById('conn-dot');
+    var label = document.getElementById('conn-label');
+    if (!dot || !label) return;
+    dot.classList.remove('online','reconnecting','offline');
+    dot.classList.add(s);
+    label.textContent = (s === 'online') ? 'オンライン' : (s === 'reconnecting') ? '再接続中' : 'オフライン';
+  }
+
+  function renderPresence(){
+    var keys = Object.keys(presenceUsers);
+    document.getElementById('stat-editors').textContent = '編集中: ' + keys.length + '人';
+    var listEl = document.getElementById('presence-list');
+    listEl.innerHTML = '';
+    keys.forEach(function(key){
+      var entries = presenceUsers[key];
+      var email = (entries && entries[0] && entries[0].email) || key;
+      var chip = document.createElement('span');
+      chip.className = 'presence-chip';
+      chip.title = email;
+      chip.textContent = (email.charAt(0) || '?').toUpperCase();
+      listEl.appendChild(chip);
+    });
+  }
+
+  function broadcastOp(type, payload){
+    if (!realtimeChannel) return;
+    realtimeChannel.send({ type: 'broadcast', event: 'op', payload: { type: type, data: payload, sender: clientId } });
+  }
+
+  function applyRemoteOp(op){
+    if (!op || op.sender === clientId) return;
+    var d = op.data;
+    if (op.type === 'node:add'){ state.nodes.push(d.node); }
+    else if (op.type === 'node:update'){ var n = getNode(d.node.id); if (n) { Object.assign(n, d.node); } else { state.nodes.push(d.node); } }
+    else if (op.type === 'node:delete'){ deleteNode(d.id); }
+    else if (op.type === 'edge:add'){ state.edges.push(d.edge); }
+    else if (op.type === 'edge:update'){ var e = getEdge(d.edge.id); if (e) { Object.assign(e, d.edge); } else { state.edges.push(d.edge); } }
+    else if (op.type === 'edge:delete'){ deleteEdge(d.id); }
+    else if (op.type === 'loop:add'){ state.loopLabels.push(d.loop); }
+    else if (op.type === 'loop:update'){ var l = getLoop(d.loop.id); if (l) { Object.assign(l, d.loop); } else { state.loopLabels.push(d.loop); } }
+    else if (op.type === 'loop:delete'){ deleteLoop(d.id); }
+    else if (op.type === 'title'){ state.title = d.title; titleInput.value = d.title; }
+    render();
+  }
+
+  function disconnectRealtime(){
+    if (realtimeChannel && sb) {
+      try { sb.removeChannel(realtimeChannel); } catch(e){}
+    }
+    realtimeChannel = null;
+    presenceUsers = {};
+    renderPresence();
+    updateConnStatus('offline');
+  }
+
+  function connectRealtime(diagramId){
+    disconnectRealtime();
+    if (!sb || !diagramId) return;
+    updateConnStatus('reconnecting');
+    var identity = (currentUser && currentUser.email) || ('匿名-' + clientId.slice(2,6));
+    var channel = sb.channel('diagram-' + diagramId, {
+      config: { broadcast: { self: false }, presence: { key: identity } }
+    });
+    channel.on('broadcast', { event: 'op' }, function(msg){ applyRemoteOp(msg.payload); });
+    channel.on('presence', { event: 'sync' }, function(){
+      presenceUsers = channel.presenceState();
+      renderPresence();
+    });
+    channel.subscribe(function(status){
+      if (status === 'SUBSCRIBED'){
+        updateConnStatus('online');
+        channel.track({ email: identity, joinedAt: Date.now() });
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT'){
+        updateConnStatus('reconnecting');
+      } else if (status === 'CLOSED'){
+        updateConnStatus('offline');
+      }
+    });
+    realtimeChannel = channel;
   }
 
   function getNode(id){
@@ -533,6 +629,7 @@
         pushHistory();
         var n = { id: newId('node'), label: 'ノード', description: '', x: pos.x-70, y: pos.y-28, width: 140, height: 56, color: '#ffffff', tags: [] };
         state.nodes.push(n);
+        broadcastOp('node:add', { node: n });
         selectItem('node', n.id);
         return;
       }
@@ -540,6 +637,7 @@
         pushHistory();
         var lp = { id: newId('loop'), label: 'R1', type: 'reinforcing', title: '', description: '', x: pos.x, y: pos.y };
         state.loopLabels.push(lp);
+        broadcastOp('loop:add', { loop: lp });
         selectItem('loop', lp.id);
         return;
       }
@@ -577,17 +675,19 @@
     isPanning = false;
     panStart = null;
     if (dragging){
+      if (dragging.kind === 'node') broadcastOp('node:update', { node: dragging.obj });
+      else if (dragging.kind === 'loop') broadcastOp('loop:update', { loop: dragging.obj });
       dragging = null;
       scheduleAutosave();
     }
   }
 
-  function startDrag(evt, obj){
+  function startDrag(evt, obj, kind){
     if (tool !== 'select') return;
     evt.stopPropagation();
     pushHistory();
     var pos = screenToWorld(evt);
-    dragging = { obj: obj, offX: pos.x - obj.x, offY: pos.y - obj.y };
+    dragging = { obj: obj, kind: kind, offX: pos.x - obj.x, offY: pos.y - obj.y };
   }
 
   function onNodeClick(evt, node){
@@ -603,6 +703,7 @@
         pushHistory();
         var e = { id: newId('edge'), sourceNodeId: edgeDraftSource, targetNodeId: node.id, polarity: 'unset', description: '', curve: 0 };
         state.edges.push(e);
+        broadcastOp('edge:add', { edge: e });
         edgeDraftSource = null;
         selectItem('edge', e.id);
       }
@@ -632,7 +733,7 @@
       fill: node.color || '#ffffff',
       class: 'node-rect' + (isSel ? ' selected' : '') + (isDraftTarget ? ' node-draft-target' : '')
     });
-    rect.addEventListener('mousedown', function(evt){ startDrag(evt, node); });
+    rect.addEventListener('mousedown', function(evt){ startDrag(evt, node, 'node'); });
     rect.addEventListener('click', function(evt){ onNodeClick(evt, node); });
     g.appendChild(rect);
 
@@ -693,7 +794,7 @@
   function renderLoop(loop){
     var g = svgEl('g', { class: 'loop-badge' + (selected.type === 'loop' && selected.id === loop.id ? ' selected' : '') });
     var circle = svgEl('circle', { cx: loop.x, cy: loop.y, r: 20 });
-    circle.addEventListener('mousedown', function(evt){ startDrag(evt, loop); });
+    circle.addEventListener('mousedown', function(evt){ startDrag(evt, loop, 'loop'); });
     circle.addEventListener('click', function(evt){ onLoopClick(evt, loop); });
     g.appendChild(circle);
     var code = svgEl('text', { x: loop.x, y: loop.y - (loop.title ? 3 : 0), class: 'loop-code' });
@@ -727,19 +828,20 @@
         '<label>タグ(カンマ区切りで複数可)</label><input type="text" id="p-tags" value="' + escAttr((node.tags||[]).join(', ')) + '" placeholder="例: 重要, リスク">' +
         '<div class="taghint">ノードの下に色付きラベルとして表示されます</div>' +
         '<button id="delbtn">このノードを削除</button>';
-      document.getElementById('p-label').addEventListener('input', function(e){ node.label = e.target.value; renderLight(); scheduleAutosave(); });
-      document.getElementById('p-desc').addEventListener('input', function(e){ node.description = e.target.value; renderLight(); scheduleAutosave(); });
-      document.getElementById('p-color').addEventListener('input', function(e){ node.color = e.target.value; renderLight(); scheduleAutosave(); });
+      document.getElementById('p-label').addEventListener('input', function(e){ node.label = e.target.value; renderLight(); scheduleAutosave(); broadcastOp('node:update', { node: node }); });
+      document.getElementById('p-desc').addEventListener('input', function(e){ node.description = e.target.value; renderLight(); scheduleAutosave(); broadcastOp('node:update', { node: node }); });
+      document.getElementById('p-color').addEventListener('input', function(e){ node.color = e.target.value; renderLight(); scheduleAutosave(); broadcastOp('node:update', { node: node }); });
       document.getElementById('p-tags').addEventListener('input', function(e){
         node.tags = e.target.value.split(',').map(function(s){ return s.trim(); }).filter(function(s){ return s.length > 0; });
         renderLight();
         scheduleAutosave();
+        broadcastOp('node:update', { node: node });
       });
       attachUndoableFocusBlur(document.getElementById('p-label'));
       attachUndoableFocusBlur(document.getElementById('p-desc'));
       attachUndoableFocusBlur(document.getElementById('p-color'));
       attachUndoableFocusBlur(document.getElementById('p-tags'));
-      document.getElementById('delbtn').addEventListener('click', function(){ pushHistory(); deleteNode(node.id); selected={type:null,id:null}; render(); });
+      document.getElementById('delbtn').addEventListener('click', function(){ pushHistory(); var did = node.id; deleteNode(did); broadcastOp('node:delete', { id: did }); selected={type:null,id:null}; render(); });
       return;
     }
     if (selected.type === 'edge'){
@@ -757,12 +859,12 @@
         '<button id="delbtn">この矢印を削除</button>';
       document.getElementById('p-pol').value = edge.polarity;
       attachUndoableFocusBlur(document.getElementById('p-pol'));
-      document.getElementById('p-pol').addEventListener('change', function(e){ edge.polarity = e.target.value; renderLight(); scheduleAutosave(); });
-      document.getElementById('p-desc').addEventListener('input', function(e){ edge.description = e.target.value; scheduleAutosave(); });
+      document.getElementById('p-pol').addEventListener('change', function(e){ edge.polarity = e.target.value; renderLight(); scheduleAutosave(); broadcastOp('edge:update', { edge: edge }); });
+      document.getElementById('p-desc').addEventListener('input', function(e){ edge.description = e.target.value; scheduleAutosave(); broadcastOp('edge:update', { edge: edge }); });
       attachUndoableFocusBlur(document.getElementById('p-desc'));
-      document.getElementById('p-curve').addEventListener('input', function(e){ edge.curve = parseFloat(e.target.value); renderLight(); scheduleAutosave(); });
+      document.getElementById('p-curve').addEventListener('input', function(e){ edge.curve = parseFloat(e.target.value); renderLight(); scheduleAutosave(); broadcastOp('edge:update', { edge: edge }); });
       attachUndoableFocusBlur(document.getElementById('p-curve'));
-      document.getElementById('delbtn').addEventListener('click', function(){ pushHistory(); deleteEdge(edge.id); selected={type:null,id:null}; render(); });
+      document.getElementById('delbtn').addEventListener('click', function(){ pushHistory(); var did = edge.id; deleteEdge(did); broadcastOp('edge:delete', { id: did }); selected={type:null,id:null}; render(); });
       return;
     }
     if (selected.type === 'loop'){
@@ -777,15 +879,15 @@
         '<label>説明</label><textarea id="p-desc">' + escHtml(loop.description||'') + '</textarea>' +
         '<button id="delbtn">このループラベルを削除</button>';
       document.getElementById('p-type').value = loop.type;
-      document.getElementById('p-code').addEventListener('input', function(e){ loop.label = e.target.value; renderLight(); scheduleAutosave(); });
-      document.getElementById('p-type').addEventListener('change', function(e){ loop.type = e.target.value; scheduleAutosave(); });
-      document.getElementById('p-title').addEventListener('input', function(e){ loop.title = e.target.value; renderLight(); scheduleAutosave(); });
-      document.getElementById('p-desc').addEventListener('input', function(e){ loop.description = e.target.value; scheduleAutosave(); });
+      document.getElementById('p-code').addEventListener('input', function(e){ loop.label = e.target.value; renderLight(); scheduleAutosave(); broadcastOp('loop:update', { loop: loop }); });
+      document.getElementById('p-type').addEventListener('change', function(e){ loop.type = e.target.value; scheduleAutosave(); broadcastOp('loop:update', { loop: loop }); });
+      document.getElementById('p-title').addEventListener('input', function(e){ loop.title = e.target.value; renderLight(); scheduleAutosave(); broadcastOp('loop:update', { loop: loop }); });
+      document.getElementById('p-desc').addEventListener('input', function(e){ loop.description = e.target.value; scheduleAutosave(); broadcastOp('loop:update', { loop: loop }); });
       attachUndoableFocusBlur(document.getElementById('p-code'));
       attachUndoableFocusBlur(document.getElementById('p-type'));
       attachUndoableFocusBlur(document.getElementById('p-title'));
       attachUndoableFocusBlur(document.getElementById('p-desc'));
-      document.getElementById('delbtn').addEventListener('click', function(){ pushHistory(); deleteLoop(loop.id); selected={type:null,id:null}; render(); });
+      document.getElementById('delbtn').addEventListener('click', function(){ pushHistory(); var did = loop.id; deleteLoop(did); broadcastOp('loop:delete', { id: did }); selected={type:null,id:null}; render(); });
       return;
     }
     proppanel.innerHTML = '<div class="empty">要素を選択すると、ここに詳細が表示されます。<br><br>左のツールバーで「ノード」「矢印」「ループ」を選び、キャンバスをクリックすると追加できます。</div>';
@@ -847,11 +949,11 @@
   document.getElementById('btn-undo').addEventListener('click', undo);
   document.getElementById('btn-redo').addEventListener('click', redo);
   document.getElementById('btn-sample').addEventListener('click', loadSample);
-  document.getElementById('btn-clear').addEventListener('click', function(){ if (confirm('現在の内容を消去して新規作成しますか？')) { currentDiagramId = null; clearAll(); try { var url = new URL(window.location.href); url.searchParams.delete('d'); window.history.replaceState({}, '', url); } catch(e){} } });
+  document.getElementById('btn-clear').addEventListener('click', function(){ if (confirm('現在の内容を消去して新規作成しますか？')) { currentDiagramId = null; disconnectRealtime(); clearAll(); try { var url = new URL(window.location.href); url.searchParams.delete('d'); window.history.replaceState({}, '', url); } catch(e){} } });
   document.getElementById('btn-save').addEventListener('click', doSave);
   document.getElementById('btn-mydiagrams').addEventListener('click', openDiagramModal);
   document.getElementById('btn-close-modal').addEventListener('click', closeDiagramModal);
-  titleInput.addEventListener('input', function(e){ state.title = e.target.value; scheduleAutosave(); });
+  titleInput.addEventListener('input', function(e){ state.title = e.target.value; scheduleAutosave(); broadcastOp('title', { title: state.title }); });
 
   svg.addEventListener('mousedown', onCanvasMouseDown);
   window.addEventListener('mousemove', onCanvasMouseMove);
@@ -868,9 +970,10 @@
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
     if ((evt.key === 'Delete' || evt.key === 'Backspace') && selected.type){
       pushHistory();
-      if (selected.type === 'node') deleteNode(selected.id);
-      if (selected.type === 'edge') deleteEdge(selected.id);
-      if (selected.type === 'loop') deleteLoop(selected.id);
+      var delId = selected.id;
+      if (selected.type === 'node') { deleteNode(delId); broadcastOp('node:delete', { id: delId }); }
+      if (selected.type === 'edge') { deleteEdge(delId); broadcastOp('edge:delete', { id: delId }); }
+      if (selected.type === 'loop') { deleteLoop(delId); broadcastOp('loop:delete', { id: delId }); }
       selected = { type: null, id: null };
       render();
     }
