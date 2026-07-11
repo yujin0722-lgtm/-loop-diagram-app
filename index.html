@@ -98,6 +98,9 @@
 
   #presence-list { display: flex; gap: 4px; }
   .presence-chip { width: 24px; height: 24px; border-radius: 50%; background: #1a6bd6; color: #fff; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+
+  #share-select { border: 1px solid #ccc; background: #fff; border-radius: 6px; padding: 6px 8px; font-size: 12px; cursor: pointer; }
+  #readonly-badge { font-size: 12px; color: #0a5fa8; background: #eaf4ff; border: 1px solid #b8dcff; padding: 4px 10px; border-radius: 6px; }
 </style>
 </head>
 <body>
@@ -109,6 +112,12 @@
     <button id="btn-clear">新規作成(クリア)</button>
     <button id="btn-save">今すぐ保存</button>
     <button id="btn-mydiagrams">マイ図一覧</button>
+    <select id="share-select" title="共有設定" style="display:none;">
+      <option value="private">&#128274; 非公開</option>
+      <option value="link-view">&#128065; リンクで閲覧可</option>
+      <option value="link-edit">&#9998; リンクで編集可(ログイン必要)</option>
+    </select>
+    <span id="readonly-badge" style="display:none;">閲覧のみ(編集不可)</span>
     <div class="spacer"></div>
     <div id="presence-list"></div>
     <div id="authbar"></div>
@@ -184,6 +193,9 @@
   var clientId = 'c_' + Math.random().toString(36).slice(2);
   var realtimeChannel = null;
   var presenceUsers = {};
+  var currentDiagramOwnerId = null;
+  var currentShareSettings = 'private';
+  var readOnlyMode = false;
 
   var svg = document.getElementById('canvas');
   var viewport = document.getElementById('viewport');
@@ -282,6 +294,9 @@
     } else if (status === 'unsaved'){
       el.textContent = '未保存の変更があります…';
       el.classList.add('status-unsaved');
+    } else if (status === 'readonly'){
+      el.textContent = '閲覧のみモードです(編集はできません)';
+      el.classList.add('status-saved');
     } else if (status === 'error'){
       el.textContent = '保存エラー: ' + (extra || '通信を確認してください');
       el.classList.add('status-error');
@@ -314,12 +329,16 @@
       if (res.error) { setSaveStatus('error', res.error.message); return; }
       if (!currentDiagramId && res.data){
         currentDiagramId = res.data.id;
+        currentDiagramOwnerId = res.data.owner_id || (currentUser && currentUser.id);
+        currentShareSettings = res.data.share_settings || 'private';
+        readOnlyMode = false;
         try {
           var url = new URL(window.location.href);
           url.searchParams.set('d', currentDiagramId);
           window.history.replaceState({}, '', url);
         } catch(e){}
         connectRealtime(currentDiagramId);
+        renderShareUI();
       }
       setSaveStatus('saved');
     }).catch(function(err){
@@ -342,12 +361,17 @@
       state.edges = (row.data && row.data.edges) || [];
       state.loopLabels = (row.data && row.data.loopLabels) || [];
       currentDiagramId = row.id;
+      currentDiagramOwnerId = row.owner_id;
+      currentShareSettings = row.share_settings || 'private';
+      var isOwnerNow = currentUser && currentUser.id === currentDiagramOwnerId;
+      readOnlyMode = !isOwnerNow && !(currentShareSettings === 'link-edit' && currentUser);
       titleInput.value = state.title;
       selected = { type: null, id: null };
       history = [];
       future = [];
       render();
-      setSaveStatus('saved');
+      renderShareUI();
+      setSaveStatus(readOnlyMode ? 'readonly' : 'saved');
       connectRealtime(currentDiagramId);
     }).catch(function(err){
       setSaveStatus('error', err && err.message);
@@ -394,7 +418,7 @@
     if (currentUser){
       el.innerHTML = '<span class="useremail">' + escHtmlEarly(currentUser.email || '') + '</span><button id="btn-logout">ログアウト</button>';
       document.getElementById('btn-logout').addEventListener('click', function(){
-        sb.auth.signOut().then(function(){ currentUser = null; currentDiagramId = null; disconnectRealtime(); renderAuthBar(); setSaveStatus('no-login'); });
+        sb.auth.signOut().then(function(){ currentUser = null; currentDiagramId = null; currentDiagramOwnerId = null; currentShareSettings = 'private'; readOnlyMode = false; disconnectRealtime(); renderAuthBar(); renderShareUI(); setSaveStatus('no-login'); });
       });
     } else {
       el.innerHTML = '<input type="email" id="auth-email" placeholder="メールアドレス"><button id="btn-send-link">ログインリンクを送信</button>';
@@ -422,7 +446,14 @@
     sb.auth.onAuthStateChange(function(event, session){
       currentUser = session ? session.user : null;
       renderAuthBar();
-      setSaveStatus(currentUser ? (currentDiagramId ? 'saved' : 'ready') : 'no-login');
+      if (currentDiagramId){
+        var isOwnerNow = currentUser && currentUser.id === currentDiagramOwnerId;
+        readOnlyMode = !isOwnerNow && !(currentShareSettings === 'link-edit' && currentUser);
+        renderShareUI();
+        setSaveStatus(readOnlyMode ? 'readonly' : 'saved');
+      } else {
+        setSaveStatus(currentUser ? 'ready' : 'no-login');
+      }
     });
     sb.auth.getSession().then(function(res){
       currentUser = res.data && res.data.session ? res.data.session.user : null;
@@ -457,6 +488,56 @@
       chip.textContent = (email.charAt(0) || '?').toUpperCase();
       listEl.appendChild(chip);
     });
+  }
+
+  function renderShareUI(){
+    var sel = document.getElementById('share-select');
+    var badge = document.getElementById('readonly-badge');
+    var isOwner = currentUser && currentDiagramOwnerId && currentUser.id === currentDiagramOwnerId;
+    if (sel){
+      if (isOwner && currentDiagramId){
+        sel.style.display = '';
+        sel.value = currentShareSettings;
+        sel.disabled = false;
+      } else {
+        sel.style.display = 'none';
+      }
+    }
+    if (badge){
+      badge.style.display = readOnlyMode ? '' : 'none';
+    }
+    if (titleInput) titleInput.readOnly = readOnlyMode;
+    ['btn-save','btn-clear','btn-sample','btn-undo','btn-redo'].forEach(function(id){
+      var el = document.getElementById(id);
+      if (el) el.disabled = readOnlyMode;
+    });
+    document.querySelectorAll('#toolbar button[data-tool]').forEach(function(btn){
+      var t = btn.getAttribute('data-tool');
+      if (t !== 'select') btn.disabled = readOnlyMode;
+    });
+  }
+
+  function updateShareSettings(value){
+    if (!sb || !currentDiagramId) return;
+    var old = currentShareSettings;
+    currentShareSettings = value;
+    sb.from('diagrams').update({ share_settings: value }).eq('id', currentDiagramId).then(function(res){
+      if (res.error){
+        alert('共有設定の変更に失敗しました: ' + res.error.message);
+        currentShareSettings = old;
+        renderShareUI();
+      }
+    }).catch(function(err){
+      alert('共有設定の変更に失敗しました: ' + (err && err.message ? err.message : JSON.stringify(err)));
+      currentShareSettings = old;
+      renderShareUI();
+    });
+  }
+
+  function disablePropPanelIfReadOnly(){
+    if (!readOnlyMode) return;
+    var els = proppanel.querySelectorAll('input,textarea,select,button');
+    for (var i = 0; i < els.length; i++) els[i].disabled = true;
   }
 
   function broadcastOp(type, payload){
@@ -632,6 +713,7 @@
     if (evt.target === svg || evt.target === viewport){
       var pos = screenToWorld(evt);
       if (tool === 'add-node'){
+        if (readOnlyMode) return;
         pushHistory();
         var n = { id: newId('node'), label: 'ノード', description: '', x: pos.x-70, y: pos.y-28, width: 140, height: 56, color: '#ffffff', tags: [] };
         state.nodes.push(n);
@@ -640,6 +722,7 @@
         return;
       }
       if (tool === 'add-loop'){
+        if (readOnlyMode) return;
         pushHistory();
         var lp = { id: newId('loop'), label: 'R1', type: 'reinforcing', title: '', description: '', x: pos.x, y: pos.y };
         state.loopLabels.push(lp);
@@ -690,6 +773,7 @@
 
   function startDrag(evt, obj, kind){
     if (tool !== 'select') return;
+    if (readOnlyMode) return;
     evt.stopPropagation();
     pushHistory();
     var pos = screenToWorld(evt);
@@ -706,6 +790,7 @@
         edgeDraftSource = null;
         render();
       } else {
+        if (readOnlyMode) { edgeDraftSource = null; render(); return; }
         pushHistory();
         var e = { id: newId('edge'), sourceNodeId: edgeDraftSource, targetNodeId: node.id, polarity: 'unset', description: '', curve: 0 };
         state.edges.push(e);
@@ -848,6 +933,7 @@
       attachUndoableFocusBlur(document.getElementById('p-color'));
       attachUndoableFocusBlur(document.getElementById('p-tags'));
       document.getElementById('delbtn').addEventListener('click', function(){ pushHistory(); var did = node.id; deleteNode(did); broadcastOp('node:delete', { id: did }); selected={type:null,id:null}; render(); });
+      disablePropPanelIfReadOnly();
       return;
     }
     if (selected.type === 'edge'){
@@ -871,6 +957,7 @@
       document.getElementById('p-curve').addEventListener('input', function(e){ edge.curve = parseFloat(e.target.value); renderLight(); scheduleAutosave(); broadcastOp('edge:update', { edge: edge }); });
       attachUndoableFocusBlur(document.getElementById('p-curve'));
       document.getElementById('delbtn').addEventListener('click', function(){ pushHistory(); var did = edge.id; deleteEdge(did); broadcastOp('edge:delete', { id: did }); selected={type:null,id:null}; render(); });
+      disablePropPanelIfReadOnly();
       return;
     }
     if (selected.type === 'loop'){
@@ -894,6 +981,7 @@
       attachUndoableFocusBlur(document.getElementById('p-title'));
       attachUndoableFocusBlur(document.getElementById('p-desc'));
       document.getElementById('delbtn').addEventListener('click', function(){ pushHistory(); var did = loop.id; deleteLoop(did); broadcastOp('loop:delete', { id: did }); selected={type:null,id:null}; render(); });
+      disablePropPanelIfReadOnly();
       return;
     }
     proppanel.innerHTML = '<div class="empty">要素を選択すると、ここに詳細が表示されます。<br><br>左のツールバーで「ノード」「矢印」「ループ」を選び、キャンバスをクリックすると追加できます。</div>';
@@ -954,12 +1042,12 @@
   document.getElementById('btn-zoomout').addEventListener('click', function(){ view.scale = Math.max(view.scale / 1.2, 0.3); applyViewTransform(); });
   document.getElementById('btn-undo').addEventListener('click', undo);
   document.getElementById('btn-redo').addEventListener('click', redo);
-  document.getElementById('btn-sample').addEventListener('click', loadSample);
-  document.getElementById('btn-clear').addEventListener('click', function(){ if (confirm('現在の内容を消去して新規作成しますか？')) { currentDiagramId = null; disconnectRealtime(); clearAll(); try { var url = new URL(window.location.href); url.searchParams.delete('d'); window.history.replaceState({}, '', url); } catch(e){} } });
-  document.getElementById('btn-save').addEventListener('click', doSave);
+  document.getElementById('btn-sample').addEventListener('click', function(){ if (!readOnlyMode) loadSample(); });
+  document.getElementById('btn-clear').addEventListener('click', function(){ if (readOnlyMode) return; if (confirm('現在の内容を消去して新規作成しますか？')) { currentDiagramId = null; currentDiagramOwnerId = null; currentShareSettings = 'private'; readOnlyMode = false; disconnectRealtime(); clearAll(); renderShareUI(); try { var url = new URL(window.location.href); url.searchParams.delete('d'); window.history.replaceState({}, '', url); } catch(e){} } });
+  document.getElementById('btn-save').addEventListener('click', function(){ if (!readOnlyMode) doSave(); });
   document.getElementById('btn-mydiagrams').addEventListener('click', openDiagramModal);
   document.getElementById('btn-close-modal').addEventListener('click', closeDiagramModal);
-  titleInput.addEventListener('input', function(e){ state.title = e.target.value; scheduleAutosave(); broadcastOp('title', { title: state.title }); });
+  titleInput.addEventListener('input', function(e){ if (readOnlyMode) return; state.title = e.target.value; scheduleAutosave(); broadcastOp('title', { title: state.title }); });
 
   svg.addEventListener('mousedown', onCanvasMouseDown);
   window.addEventListener('mousemove', onCanvasMouseMove);
@@ -974,6 +1062,7 @@
   window.addEventListener('keydown', function(evt){
     var tag = (evt.target && evt.target.tagName) || '';
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (readOnlyMode) return;
     if ((evt.key === 'Delete' || evt.key === 'Backspace') && selected.type){
       pushHistory();
       var delId = selected.id;
@@ -987,8 +1076,12 @@
     if (evt.ctrlKey && evt.key === 'y'){ evt.preventDefault(); redo(); }
   });
 
+  var shareSelectEl = document.getElementById('share-select');
+  if (shareSelectEl) shareSelectEl.addEventListener('change', function(e){ updateShareSettings(e.target.value); });
+
   updateHint();
   render();
+  renderShareUI();
   initAuth();
 })();
 </script>
