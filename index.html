@@ -369,6 +369,13 @@
       selected = { type: null, id: null };
       history = [];
       future = [];
+      try {
+        var loadedUrl = new URL(window.location.href);
+        if (loadedUrl.searchParams.get('d') !== currentDiagramId){
+          loadedUrl.searchParams.set('d', currentDiagramId);
+          window.history.replaceState({}, '', loadedUrl);
+        }
+      } catch(e){}
       render();
       renderShareUI();
       setSaveStatus(readOnlyMode ? 'readonly' : 'saved');
@@ -526,6 +533,8 @@
         alert('共有設定の変更に失敗しました: ' + res.error.message);
         currentShareSettings = old;
         renderShareUI();
+      } else {
+        broadcastOp('share:update', { shareSettings: value });
       }
     }).catch(function(err){
       alert('共有設定の変更に失敗しました: ' + (err && err.message ? err.message : JSON.stringify(err)));
@@ -558,6 +567,12 @@
     else if (op.type === 'loop:update'){ var l = getLoop(d.loop.id); if (l) { Object.assign(l, d.loop); } else { state.loopLabels.push(d.loop); } }
     else if (op.type === 'loop:delete'){ deleteLoop(d.id); }
     else if (op.type === 'title'){ state.title = d.title; titleInput.value = d.title; }
+    else if (op.type === 'share:update'){
+      currentShareSettings = d.shareSettings;
+      var isOwnerNow2 = currentUser && currentUser.id === currentDiagramOwnerId;
+      readOnlyMode = !isOwnerNow2 && !(currentShareSettings === 'link-edit' && currentUser);
+      renderShareUI();
+    }
     render();
   }
 
