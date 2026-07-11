@@ -101,6 +101,13 @@
 
   #share-select { border: 1px solid #ccc; background: #fff; border-radius: 6px; padding: 6px 8px; font-size: 12px; cursor: pointer; }
   #readonly-badge { font-size: 12px; color: #0a5fa8; background: #eaf4ff; border: 1px solid #b8dcff; padding: 4px 10px; border-radius: 6px; }
+
+  #privateNoticeModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); align-items: center; justify-content: center; z-index: 60; }
+  #privateNoticeModal .box { background: #fff; border-radius: 10px; padding: 22px; width: 360px; box-shadow: 0 8px 30px rgba(0,0,0,0.25); }
+  #privateNoticeModal h3 { margin: 0 0 10px; font-size: 15px; color: #a02020; }
+  #privateNoticeModal p { font-size: 13px; color: #444; line-height: 1.6; margin: 0 0 16px; }
+  #privateNoticeModal button { border: 1px solid #ccc; background: #fff; border-radius: 6px; padding: 7px 16px; font-size: 13px; cursor: pointer; }
+  #privateNoticeModal button:hover { background: #f2f2f2; }
 </style>
 </head>
 <body>
@@ -129,6 +136,14 @@
       <h3>マイ図一覧</h3>
       <div id="diagramList"></div>
       <button id="btn-close-modal" style="margin-top:14px;">閉じる</button>
+    </div>
+  </div>
+
+  <div id="privateNoticeModal">
+    <div class="box">
+      <h3>&#9888; 閲覧できなくなりました</h3>
+      <p id="privateNoticeText"></p>
+      <button id="btn-close-private-notice">OK</button>
     </div>
   </div>
 
@@ -524,6 +539,14 @@
     });
   }
 
+  function showPrivateNotice(msg){
+    var modal = document.getElementById('privateNoticeModal');
+    var textEl = document.getElementById('privateNoticeText');
+    if (!modal || !textEl) { alert(msg); return; }
+    textEl.textContent = msg;
+    modal.style.display = 'flex';
+  }
+
   function updateShareSettings(value){
     if (!sb || !currentDiagramId) return;
     var old = currentShareSettings;
@@ -571,7 +594,7 @@
       currentShareSettings = d.shareSettings;
       var isOwnerNow2 = currentUser && currentUser.id === currentDiagramOwnerId;
       if (currentShareSettings === 'private' && !isOwnerNow2){
-        alert('オーナーがこの図を非公開に変更しました。これ以上閲覧・編集できません。');
+        showPrivateNotice('オーナーがこの図を非公開に変更しました。これ以上閲覧・編集できません。');
         currentDiagramId = null;
         currentDiagramOwnerId = null;
         currentShareSettings = 'private';
@@ -1086,6 +1109,8 @@
   document.getElementById('btn-save').addEventListener('click', function(){ if (!readOnlyMode) doSave(); });
   document.getElementById('btn-mydiagrams').addEventListener('click', openDiagramModal);
   document.getElementById('btn-close-modal').addEventListener('click', closeDiagramModal);
+  var closePrivateNoticeBtn = document.getElementById('btn-close-private-notice');
+  if (closePrivateNoticeBtn) closePrivateNoticeBtn.addEventListener('click', function(){ document.getElementById('privateNoticeModal').style.display = 'none'; });
   titleInput.addEventListener('input', function(e){ if (readOnlyMode) return; state.title = e.target.value; scheduleAutosave(); broadcastOp('title', { title: state.title }); });
 
   svg.addEventListener('mousedown', onCanvasMouseDown);
