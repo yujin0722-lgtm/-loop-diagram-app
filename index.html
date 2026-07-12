@@ -30,6 +30,10 @@
   svg#canvas { width: 100%; height: 100%; display: block; }
   svg#canvas.mode-add-node, svg#canvas.mode-add-loop, svg#canvas.mode-add-text { cursor: copy; }
   .text-note-label { font-weight: 700; cursor: move; user-select: none; }
+  .swatch-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
+  .swatch { width: 20px; height: 20px; border-radius: 5px; border: 1px solid #ccc; cursor: pointer; display: inline-block; }
+  .swatch.selected { border: 2px solid #1a6bd6; box-shadow: 0 0 0 1px #1a6bd6 inset; }
+  .swatch:hover { transform: scale(1.12); }
   svg#canvas.mode-add-edge { cursor: crosshair; }
   svg#canvas.mode-pan { cursor: grab; }
 
@@ -680,6 +684,11 @@
     if (!readOnlyMode) return;
     var els = proppanel.querySelectorAll('input,textarea,select,button');
     for (var i = 0; i < els.length; i++) els[i].disabled = true;
+    var swatches = proppanel.querySelectorAll('.swatch');
+    for (var j = 0; j < swatches.length; j++){
+      swatches[j].style.pointerEvents = 'none';
+      swatches[j].style.opacity = '0.5';
+    }
   }
 
   function broadcastOp(type, payload){
@@ -835,6 +844,37 @@
     var el = document.createElementNS('http://www.w3.org/2000/svg', tag);
     for (var k in attrs) el.setAttribute(k, attrs[k]);
     return el;
+  }
+
+  var nodeColorPalette = ['#ffffff','#fde8e8','#fdf0d5','#fdf6c9','#e3f5e1','#dff5f0','#e0f0fb','#e8e6fb','#fbe3f0','#ececec'];
+  var textColorPalette = ['#222222','#c0392b','#d35400','#b7950b','#1e8449','#148f77','#1a6bd6','#6c3483','#a3266b','#555555'];
+
+  function renderColorSwatches(colors, currentValue){
+    var html = '<div class="swatch-row">';
+    colors.forEach(function(c){
+      var sel = (c.toLowerCase() === String(currentValue||'').toLowerCase()) ? ' selected' : '';
+      html += '<span class="swatch' + sel + '" data-color="' + c + '" style="background:' + c + ';" title="' + c + '"></span>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function wireColorSwatches(inputId, colors, onPick){
+    var swatches = proppanel.querySelectorAll('.swatch');
+    for (var i = 0; i < swatches.length; i++){
+      (function(sw){
+        sw.addEventListener('click', function(){
+          var c = sw.getAttribute('data-color');
+          var input = document.getElementById(inputId);
+          if (input) input.value = c;
+          onPick(c);
+          var all = proppanel.querySelectorAll('.swatch');
+          for (var j = 0; j < all.length; j++){
+            all[j].classList.toggle('selected', all[j].getAttribute('data-color').toLowerCase() === c.toLowerCase());
+          }
+        });
+      })(swatches[i]);
+    }
   }
 
   var tagPalette = [
@@ -1125,12 +1165,14 @@
         '<label>ノード名</label><input type="text" id="p-label" value="' + escAttr(node.label) + '">' +
         '<label>説明</label><textarea id="p-desc">' + escHtml(node.description||'') + '</textarea>' +
         '<div class="row2"><div><label>色</label><input type="color" id="p-color" value="' + (node.color||'#ffffff') + '"></div></div>' +
+        renderColorSwatches(nodeColorPalette, node.color) +
         '<label>タグ(カンマ区切りで複数可)</label><input type="text" id="p-tags" value="' + escAttr((node.tags||[]).join(', ')) + '" placeholder="例: 重要, リスク">' +
         '<div class="taghint">ノードの下に色付きラベルとして表示されます</div>' +
         '<button id="delbtn">このノードを削除</button>';
       document.getElementById('p-label').addEventListener('input', function(e){ node.label = e.target.value; renderLight(); scheduleAutosave(); broadcastOp('node:update', { node: node }); });
       document.getElementById('p-desc').addEventListener('input', function(e){ node.description = e.target.value; renderLight(); scheduleAutosave(); broadcastOp('node:update', { node: node }); });
       document.getElementById('p-color').addEventListener('input', function(e){ node.color = e.target.value; renderLight(); scheduleAutosave(); broadcastOp('node:update', { node: node }); });
+      wireColorSwatches('p-color', nodeColorPalette, function(c){ node.color = c; renderLight(); scheduleAutosave(); broadcastOp('node:update', { node: node }); });
       document.getElementById('p-tags').addEventListener('input', function(e){
         node.tags = e.target.value.split(',').map(function(s){ return s.trim(); }).filter(function(s){ return s.length > 0; });
         renderLight();
@@ -1177,10 +1219,12 @@
         '<label>内容</label><textarea id="p-text">' + escHtml(note.text||'') + '</textarea>' +
         '<label>文字の大きさ</label><input type="range" id="p-fontsize" min="12" max="40" step="1" value="' + (note.fontSize||20) + '">' +
         '<div class="row2"><div><label>色</label><input type="color" id="p-textcolor" value="' + (note.color||'#666666') + '"></div></div>' +
+        renderColorSwatches(textColorPalette, note.color) +
         '<button id="delbtn">このテキストを削除</button>';
       document.getElementById('p-text').addEventListener('input', function(e){ note.text = e.target.value; renderLight(); scheduleAutosave(); broadcastOp('text:update', { textNote: note }); });
       document.getElementById('p-fontsize').addEventListener('input', function(e){ note.fontSize = parseInt(e.target.value,10); renderLight(); scheduleAutosave(); broadcastOp('text:update', { textNote: note }); });
       document.getElementById('p-textcolor').addEventListener('input', function(e){ note.color = e.target.value; renderLight(); scheduleAutosave(); broadcastOp('text:update', { textNote: note }); });
+      wireColorSwatches('p-textcolor', textColorPalette, function(c){ note.color = c; renderLight(); scheduleAutosave(); broadcastOp('text:update', { textNote: note }); });
       attachUndoableFocusBlur(document.getElementById('p-text'));
       attachUndoableFocusBlur(document.getElementById('p-fontsize'));
       attachUndoableFocusBlur(document.getElementById('p-textcolor'));
