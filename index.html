@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>ループ図エディタ(試作版)</title>
 <style>
   * { box-sizing: border-box; }
@@ -32,7 +32,7 @@
   #toolbar hr { width: 100%; border: none; border-top: 1px solid #ddd; margin: 4px 0; }
 
   #canvas-wrap { flex: 1; position: relative; background: #f4f5f7; overflow: hidden; }
-  svg#canvas { width: 100%; height: 100%; display: block; }
+  svg#canvas { width: 100%; height: 100%; display: block; touch-action: none; }
   svg#canvas.mode-add-node, svg#canvas.mode-add-loop, svg#canvas.mode-add-text { cursor: copy; }
   .text-note-label { font-weight: 700; cursor: move; user-select: none; }
   .swatch-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 8px 0 4px; }
@@ -283,6 +283,15 @@
   var isPanning = false;
   var panStart = null;
   var dragging = null;
+
+  var lastTouchAt = 0;
+  function markTouch(){ lastTouchAt = Date.now(); }
+  function isSyntheticMouseAfterTouch(){ return (Date.now() - lastTouchAt) < 700; }
+  function eventPoint(evt){
+    if (evt.touches && evt.touches.length) return evt.touches[0];
+    if (evt.changedTouches && evt.changedTouches.length) return evt.changedTouches[0];
+    return evt;
+  }
 
   function newId(prefix){
     var id = prefix + '_' + state.nextId;
@@ -895,9 +904,10 @@
   }
 
   function screenToWorld(evt){
+    var pt = eventPoint(evt);
     var rect = svg.getBoundingClientRect();
-    var sx = evt.clientX - rect.left;
-    var sy = evt.clientY - rect.top;
+    var sx = pt.clientX - rect.left;
+    var sy = pt.clientY - rect.top;
     return { x: (sx - view.x) / view.scale, y: (sy - view.y) / view.scale };
   }
 
@@ -1110,7 +1120,8 @@
       }
       if (tool === 'select'){
         isPanning = true;
-        panStart = { x: evt.clientX - view.x, y: evt.clientY - view.y };
+        var pt0 = eventPoint(evt);
+        panStart = { x: pt0.clientX - view.x, y: pt0.clientY - view.y };
         selected = { type: null, id: null };
         render();
       }
@@ -1119,12 +1130,15 @@
 
   function onCanvasMouseMove(evt){
     if (isPanning && panStart){
-      view.x = evt.clientX - panStart.x;
-      view.y = evt.clientY - panStart.y;
+      if (evt.cancelable) evt.preventDefault();
+      var pt = eventPoint(evt);
+      view.x = pt.clientX - panStart.x;
+      view.y = pt.clientY - panStart.y;
       applyViewTransform();
       return;
     }
     if (dragging){
+      if (evt.cancelable) evt.preventDefault();
       var pos = screenToWorld(evt);
       var obj = dragging.obj;
       obj.x = pos.x - dragging.offX;
@@ -1198,7 +1212,8 @@
       fill: node.color || '#ffffff',
       class: 'node-rect' + (isSel ? ' selected' : '') + (isDraftTarget ? ' node-draft-target' : '')
     });
-    rect.addEventListener('mousedown', function(evt){ startDrag(evt, node, 'node'); });
+    rect.addEventListener('mousedown', function(evt){ if (isSyntheticMouseAfterTouch()) return; startDrag(evt, node, 'node'); });
+    rect.addEventListener('touchstart', function(evt){ markTouch(); startDrag(evt, node, 'node'); }, { passive: false });
     rect.addEventListener('click', function(evt){ onNodeClick(evt, node); });
     g.appendChild(rect);
 
@@ -1259,7 +1274,8 @@
   function renderLoop(loop){
     var g = svgEl('g', { class: 'loop-badge' + (selected.type === 'loop' && selected.id === loop.id ? ' selected' : '') });
     var circle = svgEl('circle', { cx: loop.x, cy: loop.y, r: 20 });
-    circle.addEventListener('mousedown', function(evt){ startDrag(evt, loop, 'loop'); });
+    circle.addEventListener('mousedown', function(evt){ if (isSyntheticMouseAfterTouch()) return; startDrag(evt, loop, 'loop'); });
+    circle.addEventListener('touchstart', function(evt){ markTouch(); startDrag(evt, loop, 'loop'); }, { passive: false });
     circle.addEventListener('click', function(evt){ onLoopClick(evt, loop); });
     g.appendChild(circle);
     var code = svgEl('text', { x: loop.x, y: loop.y - (loop.title ? 3 : 0), class: 'loop-code' });
@@ -1278,7 +1294,8 @@
     var t = svgEl('text', { x: note.x, y: note.y, 'font-size': (note.fontSize || 20), class: 'text-note-label' + (isSel ? ' selected' : '') });
     t.setAttribute('fill', isSel ? '#1a6bd6' : (note.color || '#666666'));
     t.textContent = note.text || '';
-    t.addEventListener('mousedown', function(evt){ startDrag(evt, note, 'text'); });
+    t.addEventListener('mousedown', function(evt){ if (isSyntheticMouseAfterTouch()) return; startDrag(evt, note, 'text'); });
+    t.addEventListener('touchstart', function(evt){ markTouch(); startDrag(evt, note, 'text'); }, { passive: false });
     t.addEventListener('click', function(evt){ evt.stopPropagation(); if (isSelectableTool(tool)) selectItem('text', note.id); });
     return t;
   }
@@ -1635,9 +1652,12 @@
   if (closePrivateNoticeBtn) closePrivateNoticeBtn.addEventListener('click', function(){ document.getElementById('privateNoticeModal').style.display = 'none'; });
   titleInput.addEventListener('input', function(e){ if (readOnlyMode) return; state.title = e.target.value; scheduleAutosave(); broadcastOp('title', { title: state.title }); });
 
-  svg.addEventListener('mousedown', onCanvasMouseDown);
-  window.addEventListener('mousemove', onCanvasMouseMove);
-  window.addEventListener('mouseup', onCanvasMouseUp);
+  svg.addEventListener('mousedown', function(evt){ if (isSyntheticMouseAfterTouch()) return; onCanvasMouseDown(evt); });
+  svg.addEventListener('touchstart', function(evt){ markTouch(); onCanvasMouseDown(evt); }, { passive: false });
+  window.addEventListener('mousemove', function(evt){ if (isSyntheticMouseAfterTouch()) return; onCanvasMouseMove(evt); });
+  window.addEventListener('touchmove', onCanvasMouseMove, { passive: false });
+  window.addEventListener('mouseup', function(evt){ if (isSyntheticMouseAfterTouch()) return; onCanvasMouseUp(evt); });
+  window.addEventListener('touchend', function(evt){ markTouch(); onCanvasMouseUp(evt); });
   svg.addEventListener('wheel', function(evt){
     evt.preventDefault();
     var factor = evt.deltaY < 0 ? 1.1 : 0.9;
