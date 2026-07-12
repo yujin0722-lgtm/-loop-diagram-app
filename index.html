@@ -46,7 +46,7 @@
     body * { visibility: hidden; }
     #canvas-wrap, #canvas-wrap * { visibility: visible; }
     #canvas-wrap { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
-    #hint, #legend, #gridBg { display: none !important; }
+    #hint, #legend, #gridBg, #centerMark { display: none !important; }
   }
   svg#canvas.mode-add-edge { cursor: crosshair; }
   svg#canvas.mode-pan { cursor: grab; }
@@ -229,6 +229,7 @@
           <li>矢印は、始点ノード→終点ノードの順にクリックして作成します。矢印を選択すると「+」(同方向)「-」(逆方向)の極性を設定できます。</li>
           <li>削除するには、要素を選択してから右側の削除ボタン、またはキーボードのDeleteキーを押します。</li>
           <li>何もない場所をドラッグすると画面全体を動かせます(パン)。マウスホイールやツールバーの+/-で拡大縮小できます。「全体表示」ボタンで図全体が画面に収まります。</li>
+          <li>キャンバス中央には図全体の「中心」を示す薄い十字マークが表示されます。図を大きく広げていくときの目印として使えます。</li>
         </ul>
 
         <h4>ループラベルの色</h4>
@@ -315,7 +316,7 @@
         <ul>
           <li>図ごとに <code>diagram-{図のID}</code> という名前のRealtimeチャンネルを使い、Broadcast(<code>{broadcast:{self:false}}</code>)で操作(ノード追加・移動・削除など)を配信しています。<code>postgres_changes</code> は意図的に使用していません。</li>
           <li>参加者の在席管理にはPresence機能を使っています。</li>
-          <li>Supabaseの制約として、Presenceのキー数は<strong>全プラン共通で1チャンネルあたり最大10</strong>という上限があります(Enterpriseプランのみ引き上げ交渉可)。これを踏まえ、アプリ側で同時参加人数のソフトな上限(オーナー以外7人、合計8人)を設け、上限超過者を自動切断する仕組みをクライアント側の決定的なロジック(参加時刻順のランク判定)で実装しています。サーバー側の強制ではないため、絶対的な保証ではありません。</li>
+          <li>Supabaseの制約として、Presenceのキー数は<strong>全プラン共通で1チャンネルあたり最大10</strong>という上限があります(Enterpriseプランのみ引き上げ交渉可)。これを踏まえ、アプリ側で同時参加人数のソフトな上限(オーナー以外7人、合計8人)を設け、上限超過者を自動切断する仕組みをクライアント側の決定的なロジック(参加時刻順のランク判定)で実装しています。サーバー側の強制ではないため、絶対的な保証ではありません。なお同時接続数(Free 200 / Pro 500)はプロジェクト全体で共有される制約であり、Presenceのキー数上限とは別軸で、図(チャンネル)ごとに独立しています。</li>
           <li>接続が切断→再接続した場合(初回接続時は除く)、データベースから最新状態を取得して再同期する処理を入れています(<code>resyncFromServer</code>)。</li>
         </ul>
 
@@ -324,6 +325,9 @@
 
         <h4>自動ログアウト</h4>
         <p>SupabaseのAuthセッション管理機能(タイムボックス化・非アクティブタイムアウト)はProプラン以上限定のため、本プロジェクトがFreeプランである前提でアプリ側(クライアントサイド)で疑似的に実装しています。<code>localStorage</code> に最終操作時刻(<code>loopdiagram_lastActivity</code>)を記録し、7日間以上更新がなければ次回アクセス時、および1時間ごとのチェックで <code>supabase.auth.signOut()</code> を呼び出します。JWT自体をサーバー側で強制失効させるものではなく、あくまでアプリ側の運用上の対策である点に注意してください。厳密なセッション管理が必要になった場合はProプランへのアップグレードを検討してください。</p>
+
+        <h4>座標系と初期表示</h4>
+        <p>図の座標系は原点(0,0)を中心とした自由な平面です。新規作成時やページ起動時は原点が画面中央に来るように初期表示されます(<code>centerViewOnOrigin</code>)。既存の図を開いたときは内容の範囲に合わせて自動的にフィットします(<code>resetViewToDefault</code> → <code>fitToView</code>)。キャンバス上の薄い十字マーク(<code>#centerMark</code>)は原点(0,0)を示す視覚的な目印で、実データではないため保存内容やPNG/PDF書き出しには含まれません。</p>
 
         <h4>デプロイ運用</h4>
         <p>コードの変更は、GitHubリポジトリの <code>index.html</code> を直接編集してコミットする運用です。GitHub Pagesが自動的に再デプロイします。ビルドツールやパッケージ管理は使用していません。</p>
@@ -373,6 +377,11 @@
         </defs>
         <g id="viewport">
           <rect id="gridBg" x="-5000" y="-5000" width="10000" height="10000" fill="url(#gridPattern)" style="display:none;"></rect>
+          <g id="centerMark" style="pointer-events:none;">
+            <line x1="-18" y1="0" x2="18" y2="0" stroke="#b0b8c4" stroke-width="1.5"></line>
+            <line x1="0" y1="-18" x2="0" y2="18" stroke="#b0b8c4" stroke-width="1.5"></line>
+            <circle cx="0" cy="0" r="4" fill="none" stroke="#b0b8c4" stroke-width="1.5"></circle>
+          </g>
           <g id="contentLayer"></g>
         </g>
       </svg>
@@ -700,6 +709,7 @@
         }
       } catch(e){}
       render();
+      resetViewToDefault();
       renderShareUI();
       setSaveStatus(readOnlyMode ? 'readonly' : 'saved');
       connectRealtime(currentDiagramId);
@@ -1041,6 +1051,8 @@
       url3.searchParams.delete('d');
       window.history.replaceState({}, '', url3);
     } catch(e){}
+    render();
+    centerViewOnOrigin();
     renderShareUI();
     setSaveStatus(currentUser ? 'ready' : 'no-login');
   }
@@ -1264,6 +1276,21 @@
     view.x = w / 2 - cx * scale;
     view.y = h / 2 - cy * scale;
     applyViewTransform();
+  }
+
+  function centerViewOnOrigin(){
+    var rect = svg.getBoundingClientRect();
+    var w = rect.width || 800;
+    var h = rect.height || 600;
+    view.scale = 1;
+    view.x = w / 2;
+    view.y = h / 2;
+    applyViewTransform();
+  }
+
+  function resetViewToDefault(){
+    var b = computeContentBounds();
+    if (b) { fitToView(); } else { centerViewOnOrigin(); }
   }
 
   function setTool(t){
@@ -1890,6 +1917,7 @@
       titleInput.value = state.title;
       selected = { type: null, id: null };
       render();
+      resetViewToDefault();
     };
     reader.onerror = function(){ alert('ファイルの読み込み中にエラーが発生しました'); };
     reader.readAsText(file);
@@ -1917,6 +1945,7 @@
     titleInput.value = state.title;
     selected = { type: null, id: null };
     render();
+    fitToView();
   }
 
   function clearAll(){
@@ -1929,6 +1958,7 @@
     titleInput.value = state.title;
     selected = { type: null, id: null };
     render();
+    centerViewOnOrigin();
   }
 
   // wiring
@@ -2017,6 +2047,7 @@
   if (shareSelectEl) shareSelectEl.addEventListener('change', function(e){ updateShareSettings(e.target.value); });
 
   updateHint();
+  centerViewOnOrigin();
   render();
   renderShareUI();
   applyGridVisibility();
