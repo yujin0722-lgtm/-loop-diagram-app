@@ -20,6 +20,8 @@
   #topbar button:disabled:hover { background: #eee; }
   #savenote { font-size: 12px; color: #b26a00; background: #fff6e5; border: 1px solid #ffdf9e; padding: 4px 10px; border-radius: 6px; }
 
+  #offlineBanner { display: none; flex: none; background: #fff3cd; color: #7a5b00; border-bottom: 1px solid #ffdf9e; padding: 6px 16px; font-size: 13px; text-align: center; font-weight: 600; }
+
   #main { flex: 1; display: flex; min-height: 0; }
 
   #toolbar { width: 72px; border-right: 1px solid #ddd; background: #fafafa; display: flex; flex-direction: column; align-items: stretch; padding: 10px 6px; gap: 4px; overflow-y: auto; }
@@ -83,8 +85,12 @@
   .edge-label.minus { fill: #c0392b; }
 
   .loop-badge circle { fill: #fff6d8; stroke: #c99a1a; stroke-width: 1.5; cursor: move; }
+  .loop-badge.type-reinforcing circle { fill: #ffe6d2; stroke: #c9601a; }
+  .loop-badge.type-balancing circle { fill: #dceaff; stroke: #1a6bd6; }
   .loop-badge.selected circle { stroke: #1a6bd6; stroke-width: 2.5; }
   .loop-badge text.loop-code { font-size: 13px; font-weight: 700; text-anchor: middle; dominant-baseline: middle; fill: #7a5b00; pointer-events: none; }
+  .loop-badge.type-reinforcing text.loop-code { fill: #8a3d00; }
+  .loop-badge.type-balancing text.loop-code { fill: #0a3d7a; }
   .loop-badge text.loop-title { font-size: 10px; text-anchor: middle; fill: #666; pointer-events: none; }
 
   .tag-chip-text { font-size: 10px; text-anchor: middle; dominant-baseline: middle; pointer-events: none; font-weight: 600; }
@@ -158,6 +164,8 @@
     <span id="savenote">読み込み中…</span>
   </div>
 
+  <div id="offlineBanner"></div>
+
   <div id="diagramModal">
     <div class="box">
       <h3>マイ図一覧</h3>
@@ -213,6 +221,8 @@
       <div id="legend">
         <div><b>+</b>：増えると増える／減ると減る</div>
         <div><b>-</b>：増えると減る／減ると増える</div>
+        <div><span style="color:#c9601a;">&#9679;</span> R：強化ループ</div>
+        <div><span style="color:#1a6bd6;">&#9679;</span> B：バランスループ</div>
       </div>
     </div>
 
@@ -692,6 +702,18 @@
     dot.classList.remove('online','reconnecting','offline');
     dot.classList.add(s);
     label.textContent = (s === 'online') ? 'オンライン' : (s === 'reconnecting') ? '再接続中' : 'オフライン';
+    var banner = document.getElementById('offlineBanner');
+    if (banner){
+      var shouldShow = !!currentDiagramId && s !== 'online';
+      if (shouldShow){
+        banner.textContent = (s === 'reconnecting')
+          ? '⚠️ 接続が不安定です。再接続を試みています…今の編集が他の参加者に届いていない可能性があります。'
+          : '⚠️ オフラインです。今の編集は他の参加者と同期されていません。';
+        banner.style.display = 'block';
+      } else {
+        banner.style.display = 'none';
+      }
+    }
   }
 
   function renderPresence(){
@@ -1353,7 +1375,8 @@
   }
 
   function renderLoop(loop){
-    var g = svgEl('g', { class: 'loop-badge' + (selected.type === 'loop' && selected.id === loop.id ? ' selected' : '') });
+    var typeClass = 'type-' + (loop.type || 'unclassified');
+    var g = svgEl('g', { class: 'loop-badge ' + typeClass + (selected.type === 'loop' && selected.id === loop.id ? ' selected' : '') });
     var circle = svgEl('circle', { cx: loop.x, cy: loop.y, r: 20 });
     circle.addEventListener('mousedown', function(evt){ if (isSyntheticMouseAfterTouch()) return; startDrag(evt, loop, 'loop'); });
     circle.addEventListener('touchstart', function(evt){ markTouch(); startDrag(evt, loop, 'loop'); }, { passive: false });
@@ -1480,7 +1503,7 @@
         '<button id="delbtn">このループラベルを削除</button>';
       document.getElementById('p-type').value = loop.type;
       document.getElementById('p-code').addEventListener('input', function(e){ loop.label = e.target.value; renderLight(); scheduleAutosave(); broadcastOp('loop:update', { loop: loop }); });
-      document.getElementById('p-type').addEventListener('change', function(e){ loop.type = e.target.value; scheduleAutosave(); broadcastOp('loop:update', { loop: loop }); });
+      document.getElementById('p-type').addEventListener('change', function(e){ loop.type = e.target.value; renderLight(); scheduleAutosave(); broadcastOp('loop:update', { loop: loop }); });
       document.getElementById('p-title').addEventListener('input', function(e){ loop.title = e.target.value; renderLight(); scheduleAutosave(); broadcastOp('loop:update', { loop: loop }); });
       document.getElementById('p-desc').addEventListener('input', function(e){ loop.description = e.target.value; scheduleAutosave(); broadcastOp('loop:update', { loop: loop }); });
       attachUndoableFocusBlur(document.getElementById('p-code'));
@@ -1560,7 +1583,11 @@
       '.edge-label.plus{fill:#1a6bd6;}' +
       '.edge-label.minus{fill:#c0392b;}' +
       '.loop-badge circle{fill:#fff6d8;stroke:#c99a1a;stroke-width:1.5;}' +
+      '.loop-badge.type-reinforcing circle{fill:#ffe6d2;stroke:#c9601a;}' +
+      '.loop-badge.type-balancing circle{fill:#dceaff;stroke:#1a6bd6;}' +
       '.loop-badge text.loop-code{font-size:13px;font-weight:700;text-anchor:middle;dominant-baseline:middle;fill:#7a5b00;}' +
+      '.loop-badge.type-reinforcing text.loop-code{fill:#8a3d00;}' +
+      '.loop-badge.type-balancing text.loop-code{fill:#0a3d7a;}' +
       '.loop-badge text.loop-title{font-size:10px;text-anchor:middle;fill:#666;}' +
       '.tag-chip-text{font-size:10px;text-anchor:middle;dominant-baseline:middle;font-weight:600;}' +
       '.text-note-label{font-weight:700;}';
