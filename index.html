@@ -247,6 +247,7 @@
   var currentShareSettings = 'private';
   var readOnlyMode = false;
   var multiUserConnected = false;
+  var MAX_NON_OWNER_PARTICIPANTS = 7; // 同時接続の上限(オーナーを除く人数。オーナーを含めた合計はこの人数+1人まで)
 
   var svg = document.getElementById('canvas');
   var viewport = document.getElementById('viewport');
@@ -728,6 +729,31 @@
     modal.style.display = 'flex';
   }
 
+  function leaveSharedDiagram(msg){
+    showPrivateNotice(msg);
+    currentDiagramId = null;
+    currentDiagramOwnerId = null;
+    currentShareSettings = 'private';
+    readOnlyMode = false;
+    disconnectRealtime();
+    state.nodes = [];
+    state.edges = [];
+    state.loopLabels = [];
+    state.textNotes = [];
+    state.title = '無題のループ図';
+    titleInput.value = state.title;
+    selected = { type: null, id: null };
+    history = [];
+    future = [];
+    try {
+      var url3 = new URL(window.location.href);
+      url3.searchParams.delete('d');
+      window.history.replaceState({}, '', url3);
+    } catch(e){}
+    renderShareUI();
+    setSaveStatus(currentUser ? 'ready' : 'no-login');
+  }
+
   function updateShareSettings(value){
     if (!sb || !currentDiagramId) return;
     var old = currentShareSettings;
@@ -783,28 +809,7 @@
       currentShareSettings = d.shareSettings;
       var isOwnerNow2 = currentUser && currentUser.id === currentDiagramOwnerId;
       if (currentShareSettings === 'private' && !isOwnerNow2){
-        showPrivateNotice('オーナーがこの図を非公開に変更しました。これ以上閲覧・編集できません。');
-        currentDiagramId = null;
-        currentDiagramOwnerId = null;
-        currentShareSettings = 'private';
-        readOnlyMode = false;
-        disconnectRealtime();
-        state.nodes = [];
-        state.edges = [];
-        state.loopLabels = [];
-        state.textNotes = [];
-        state.title = '無題のループ図';
-        titleInput.value = state.title;
-        selected = { type: null, id: null };
-        history = [];
-        future = [];
-        try {
-          var url3 = new URL(window.location.href);
-          url3.searchParams.delete('d');
-          window.history.replaceState({}, '', url3);
-        } catch(e){}
-        renderShareUI();
-        setSaveStatus(currentUser ? 'ready' : 'no-login');
+        leaveSharedDiagram('オーナーがこの図を非公開に変更しました。これ以上閲覧・編集できません。');
       } else {
         readOnlyMode = !isOwnerNow2 && !(currentShareSettings === 'link-edit' && currentUser);
         renderShareUI();
@@ -828,6 +833,7 @@
     if (!sb || !diagramId) return;
     updateConnStatus('reconnecting');
     var identity = (currentUser && currentUser.email) || ('匿名-' + clientId.slice(2,6));
+    var leavingDueToCap = false;
     var channel = sb.channel('diagram-' + diagramId, {
       config: { broadcast: { self: false }, presence: { key: identity } }
     });
@@ -835,11 +841,33 @@
     channel.on('presence', { event: 'sync' }, function(){
       presenceUsers = channel.presenceState();
       renderPresence();
+      if (leavingDueToCap) return;
+      var isOwnerNow = currentUser && currentUser.id === currentDiagramOwnerId;
+      if (isOwnerNow) return;
+      var nonOwnerEntries = [];
+      Object.keys(presenceUsers).forEach(function(k){
+        var first = presenceUsers[k] && presenceUsers[k][0];
+        if (first && !first.isOwner) nonOwnerEntries.push({ key: k, joinedAt: first.joinedAt || 0 });
+      });
+      if (nonOwnerEntries.length <= MAX_NON_OWNER_PARTICIPANTS) return;
+      nonOwnerEntries.sort(function(a,b){
+        if (a.joinedAt !== b.joinedAt) return a.joinedAt - b.joinedAt;
+        return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0);
+      });
+      var myRank = -1;
+      for (var i = 0; i < nonOwnerEntries.length; i++){
+        if (nonOwnerEntries[i].key === identity) { myRank = i; break; }
+      }
+      if (myRank >= MAX_NON_OWNER_PARTICIPANTS){
+        leavingDueToCap = true;
+        leaveSharedDiagram('この図は現在、同時に参加できる人数の上限(' + (MAX_NON_OWNER_PARTICIPANTS + 1) + '人)に達しています。しばらくしてから再度お試しください。');
+      }
     });
     channel.subscribe(function(status){
       if (status === 'SUBSCRIBED'){
         updateConnStatus('online');
-        channel.track({ email: identity, joinedAt: Date.now() });
+        var isOwnerNow = currentUser && currentUser.id === currentDiagramOwnerId;
+        channel.track({ email: identity, joinedAt: Date.now(), isOwner: isOwnerNow });
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT'){
         updateConnStatus('reconnecting');
       } else if (status === 'CLOSED'){
