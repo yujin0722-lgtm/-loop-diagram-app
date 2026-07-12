@@ -801,6 +801,10 @@
     document.getElementById('stat-zoom').textContent = 'ズーム: ' + Math.round(view.scale * 100) + '%';
   }
 
+  function isSelectableTool(t){
+    return t === 'select' || t === 'add-node' || t === 'add-loop' || t === 'add-text';
+  }
+
   function setTool(t){
     tool = t;
     edgeDraftSource = null;
@@ -994,19 +998,19 @@
       }
       return;
     }
-    if (tool === 'select'){
+    if (isSelectableTool(tool)){
       selectItem('node', node.id);
     }
   }
 
   function onEdgeClick(evt, edge){
     evt.stopPropagation();
-    if (tool === 'select') selectItem('edge', edge.id);
+    if (isSelectableTool(tool)) selectItem('edge', edge.id);
   }
 
   function onLoopClick(evt, loop){
     evt.stopPropagation();
-    if (tool === 'select') selectItem('loop', loop.id);
+    if (isSelectableTool(tool)) selectItem('loop', loop.id);
   }
 
   function renderNode(node){
@@ -1099,7 +1103,7 @@
     t.setAttribute('fill', isSel ? '#1a6bd6' : (note.color || '#666666'));
     t.textContent = note.text || '';
     t.addEventListener('mousedown', function(evt){ startDrag(evt, note, 'text'); });
-    t.addEventListener('click', function(evt){ evt.stopPropagation(); if (tool === 'select') selectItem('text', note.id); });
+    t.addEventListener('click', function(evt){ evt.stopPropagation(); if (isSelectableTool(tool)) selectItem('text', note.id); });
     return t;
   }
 
