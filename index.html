@@ -139,9 +139,9 @@
     <button id="btn-sample">サンプルを読み込む</button>
     <button id="btn-clear">新規作成(クリア)</button>
     <button id="btn-save">今すぐ保存</button>
-    <button id="btn-mydiagrams">マイ図一覧</button>
-    <button id="btn-export-json" title="今の図をJSONファイルとして書き出す">書き出し(JSON)</button>
-    <button id="btn-import-json" title="JSONファイルから読み込む">読み込み(JSON)</button>
+    <button id="btn-mydiagrams" title="保存した図の一覧を開く">マイ図一覧</button>
+    <button id="btn-export-json" title="今の図をJSONファイルとして書き出す">JSONで書き出し</button>
+    <button id="btn-import-json" title="JSONファイルから読み込む">JSONを読み込む</button>
     <input type="file" id="import-json-input" accept="application/json,.json" style="display:none;">
     <button id="btn-export-png" title="今の図を画像(PNG)として書き出す">画像で書き出し</button>
     <button id="btn-export-pdf" title="印刷ダイアログからPDFとして保存できます">PDFで保存</button>
@@ -697,9 +697,21 @@
       }
     }
     if (titleInput) titleInput.readOnly = readOnlyMode;
-    ['btn-save','btn-clear','btn-sample','btn-import-json'].forEach(function(id){
+    ['btn-save','btn-clear'].forEach(function(id){
       var el = document.getElementById(id);
       if (el) el.disabled = readOnlyMode;
+    });
+    var isSharedNonOwner = !!currentDiagramId && !isOwner;
+    var nonOwnerBlockedTitles = {
+      'btn-sample': 'サンプルを読み込む',
+      'btn-import-json': 'JSONファイルから読み込む',
+      'btn-mydiagrams': '保存した図の一覧を開く'
+    };
+    ['btn-sample','btn-import-json','btn-mydiagrams'].forEach(function(id){
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.disabled = readOnlyMode || isSharedNonOwner;
+      el.title = isSharedNonOwner ? 'オーナー以外はこの操作はできません(共有中の内容と食い違ってしまうため)' : nonOwnerBlockedTitles[id];
     });
     document.querySelectorAll('#toolbar button[data-tool]').forEach(function(btn){
       var t = btn.getAttribute('data-tool');
