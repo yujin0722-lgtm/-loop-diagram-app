@@ -229,6 +229,7 @@
   var currentDiagramOwnerId = null;
   var currentShareSettings = 'private';
   var readOnlyMode = false;
+  var multiUserConnected = false;
 
   var svg = document.getElementById('canvas');
   var viewport = document.getElementById('viewport');
@@ -283,6 +284,7 @@
   }
 
   function undo(){
+    if (readOnlyMode || multiUserConnected) return;
     if (history.length === 0) return;
     future.push(snapshot());
     state = JSON.parse(history.pop());
@@ -292,6 +294,7 @@
   }
 
   function redo(){
+    if (readOnlyMode || multiUserConnected) return;
     if (future.length === 0) return;
     history.push(snapshot());
     state = JSON.parse(future.pop());
@@ -609,6 +612,8 @@
 
   function renderPresence(){
     var keys = Object.keys(presenceUsers);
+    multiUserConnected = keys.length > 1;
+    updateUndoRedoAvailability();
     document.getElementById('stat-editors').textContent = '接続中: ' + keys.length + '人';
     var listEl = document.getElementById('presence-list');
     listEl.innerHTML = '';
@@ -627,6 +632,20 @@
       chip.style.color = colors[1];
       listEl.appendChild(chip);
     });
+  }
+
+  function updateUndoRedoAvailability(){
+    var disabled = readOnlyMode || multiUserConnected;
+    var undoBtn = document.getElementById('btn-undo');
+    var redoBtn = document.getElementById('btn-redo');
+    if (undoBtn){
+      undoBtn.disabled = disabled;
+      undoBtn.title = multiUserConnected ? '複数人が接続中は使用できません(他の人の変更を巻き戻してしまう可能性があるため)' : '元に戻す';
+    }
+    if (redoBtn){
+      redoBtn.disabled = disabled;
+      redoBtn.title = multiUserConnected ? '複数人が接続中は使用できません' : 'やり直し';
+    }
   }
 
   function renderShareUI(){
@@ -661,7 +680,7 @@
       }
     }
     if (titleInput) titleInput.readOnly = readOnlyMode;
-    ['btn-save','btn-clear','btn-sample','btn-undo','btn-redo'].forEach(function(id){
+    ['btn-save','btn-clear','btn-sample'].forEach(function(id){
       var el = document.getElementById(id);
       if (el) el.disabled = readOnlyMode;
     });
@@ -669,6 +688,7 @@
       var t = btn.getAttribute('data-tool');
       if (t !== 'select') btn.disabled = readOnlyMode;
     });
+    updateUndoRedoAvailability();
   }
 
   function showPrivateNotice(msg){
@@ -1386,6 +1406,7 @@
   render();
   renderShareUI();
   applyGridVisibility();
+  updateUndoRedoAvailability();
   initAuth();
 })();
 </script>
