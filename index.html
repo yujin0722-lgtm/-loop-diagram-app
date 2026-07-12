@@ -166,6 +166,7 @@
       <hr>
       <button id="btn-zoomin" title="拡大"><span class="ic">+</span>拡大</button>
       <button id="btn-zoomout" title="縮小"><span class="ic">-</span>縮小</button>
+      <button id="btn-grid" title="グリッド表示切替"><span class="ic">#</span>グリッド</button>
       <hr>
       <button id="btn-undo" title="元に戻す"><span class="ic">&#8630;</span>戻す</button>
       <button id="btn-redo" title="やり直し"><span class="ic">&#8631;</span>進む</button>
@@ -180,8 +181,14 @@
           <marker id="arrow-selected" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="#1a6bd6"></path>
           </marker>
+          <pattern id="gridPattern" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#dcdfe3" stroke-width="1"></path>
+          </pattern>
         </defs>
-        <g id="viewport"></g>
+        <g id="viewport">
+          <rect id="gridBg" x="-5000" y="-5000" width="10000" height="10000" fill="url(#gridPattern)" style="display:none;"></rect>
+          <g id="contentLayer"></g>
+        </g>
       </svg>
       <div id="hint"></div>
       <div id="legend">
@@ -236,6 +243,16 @@
     textNotes: [],
     nextId: 1
   };
+
+  var gridVisible = false;
+  try { gridVisible = (window.localStorage && localStorage.getItem('loopdiagram_gridVisible') === '1'); } catch(e){}
+
+  function applyGridVisibility(){
+    var gridBg = document.getElementById('gridBg');
+    if (gridBg) gridBg.style.display = gridVisible ? '' : 'none';
+    var btn = document.getElementById('btn-grid');
+    if (btn) btn.classList.toggle('active', gridVisible);
+  }
 
   var view = { x: 0, y: 0, scale: 1 };
   var tool = 'select';
@@ -1148,11 +1165,12 @@
   }
 
   function renderLight(){
-    while (viewport.firstChild) viewport.removeChild(viewport.firstChild);
-    state.textNotes.forEach(function(n){ viewport.appendChild(renderTextNote(n)); });
-    state.edges.forEach(function(e){ var el = renderEdge(e); if (el) viewport.appendChild(el); });
-    state.nodes.forEach(function(n){ viewport.appendChild(renderNode(n)); });
-    state.loopLabels.forEach(function(l){ viewport.appendChild(renderLoop(l)); });
+    var layer = document.getElementById('contentLayer');
+    while (layer.firstChild) layer.removeChild(layer.firstChild);
+    state.textNotes.forEach(function(n){ layer.appendChild(renderTextNote(n)); });
+    state.edges.forEach(function(e){ var el = renderEdge(e); if (el) layer.appendChild(el); });
+    state.nodes.forEach(function(n){ layer.appendChild(renderNode(n)); });
+    state.loopLabels.forEach(function(l){ layer.appendChild(renderLoop(l)); });
   }
 
   function renderPropPanel(){
@@ -1316,6 +1334,11 @@
   });
   document.getElementById('btn-zoomin').addEventListener('click', function(){ view.scale = Math.min(view.scale * 1.2, 3); applyViewTransform(); });
   document.getElementById('btn-zoomout').addEventListener('click', function(){ view.scale = Math.max(view.scale / 1.2, 0.3); applyViewTransform(); });
+  document.getElementById('btn-grid').addEventListener('click', function(){
+    gridVisible = !gridVisible;
+    try { if (window.localStorage) localStorage.setItem('loopdiagram_gridVisible', gridVisible ? '1' : '0'); } catch(e){}
+    applyGridVisibility();
+  });
   document.getElementById('btn-undo').addEventListener('click', undo);
   document.getElementById('btn-redo').addEventListener('click', redo);
   document.getElementById('btn-sample').addEventListener('click', function(){ if (!readOnlyMode) loadSample(); });
@@ -1361,6 +1384,7 @@
   updateHint();
   render();
   renderShareUI();
+  applyGridVisibility();
   initAuth();
 })();
 </script>
