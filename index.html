@@ -30,10 +30,10 @@
   svg#canvas { width: 100%; height: 100%; display: block; }
   svg#canvas.mode-add-node, svg#canvas.mode-add-loop, svg#canvas.mode-add-text { cursor: copy; }
   .text-note-label { font-weight: 700; cursor: move; user-select: none; }
-  .swatch-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
-  .swatch { width: 20px; height: 20px; border-radius: 5px; border: 1px solid #ccc; cursor: pointer; display: inline-block; }
+  .swatch-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 8px 0 4px; }
+  .swatch { width: 100%; aspect-ratio: 1 / 1; border-radius: 8px; border: 1px solid #ccc; cursor: pointer; display: block; }
   .swatch.selected { border: 2px solid #1a6bd6; box-shadow: 0 0 0 1px #1a6bd6 inset; }
-  .swatch:hover { transform: scale(1.12); }
+  .swatch:hover { transform: scale(1.08); }
   svg#canvas.mode-add-edge { cursor: crosshair; }
   svg#canvas.mode-pan { cursor: grab; }
 
