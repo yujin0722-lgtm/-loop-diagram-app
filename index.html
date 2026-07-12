@@ -384,6 +384,8 @@
     if (!sb) { setSaveStatus('error', 'Supabaseに接続できません'); return; }
     if (!currentUser){ setSaveStatus('no-login'); return; }
     if (!currentDiagramId){ setSaveStatus('ready'); return; }
+    var isOwnerNow = currentUser.id === currentDiagramOwnerId;
+    if (!isOwnerNow) return; // 保存はオーナーのクライアントのみが行う(複数人が同時に保存して競合するのを防ぐため)
     setSaveStatus('unsaved');
     clearTimeout(saveTimer);
     saveTimer = setTimeout(doSave, 1500);
@@ -879,6 +881,7 @@
         renderShareUI();
       }
     }
+    scheduleAutosave();
     render();
   }
 
@@ -892,12 +895,29 @@
     updateConnStatus('offline');
   }
 
+  function resyncFromServer(diagramId){
+    if (!sb || !diagramId) return;
+    sb.from('diagrams').select('*').eq('id', diagramId).single().then(function(res){
+      if (res.error || !res.data) return;
+      if (currentDiagramId !== diagramId) return; // 別の図に切り替わっていた場合は何もしない
+      var row = res.data;
+      state.title = row.title;
+      state.nodes = (row.data && row.data.nodes) || [];
+      state.edges = (row.data && row.data.edges) || [];
+      state.loopLabels = (row.data && row.data.loopLabels) || [];
+      state.textNotes = (row.data && row.data.textNotes) || [];
+      titleInput.value = state.title;
+      render();
+    }).catch(function(){});
+  }
+
   function connectRealtime(diagramId){
     disconnectRealtime();
     if (!sb || !diagramId) return;
     updateConnStatus('reconnecting');
     var identity = (currentUser && currentUser.email) || ('匿名-' + clientId.slice(2,6));
     var leavingDueToCap = false;
+    var wasDisconnected = false;
     var channel = sb.channel('diagram-' + diagramId, {
       config: { broadcast: { self: false }, presence: { key: identity } }
     });
@@ -930,11 +950,17 @@
     channel.subscribe(function(status){
       if (status === 'SUBSCRIBED'){
         updateConnStatus('online');
+        if (wasDisconnected){
+          wasDisconnected = false;
+          resyncFromServer(diagramId);
+        }
         var isOwnerNow = currentUser && currentUser.id === currentDiagramOwnerId;
         channel.track({ email: identity, joinedAt: Date.now(), isOwner: isOwnerNow });
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT'){
+        wasDisconnected = true;
         updateConnStatus('reconnecting');
       } else if (status === 'CLOSED'){
+        wasDisconnected = true;
         updateConnStatus('offline');
       }
     });
@@ -1737,6 +1763,14 @@
     }
     if (evt.ctrlKey && evt.key === 'z'){ evt.preventDefault(); undo(); }
     if (evt.ctrlKey && evt.key === 'y'){ evt.preventDefault(); redo(); }
+  });
+
+  window.addEventListener('beforeunload', function(evt){
+    var noteEl = document.getElementById('savenote');
+    if (noteEl && noteEl.classList.contains('status-unsaved')){
+      evt.preventDefault();
+      evt.returnValue = '';
+    }
   });
 
   var shareSelectEl = document.getElementById('share-select');
