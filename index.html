@@ -145,6 +145,7 @@
     <input type="file" id="import-json-input" accept="application/json,.json" style="display:none;">
     <button id="btn-export-png" title="今の図を画像(PNG)として書き出す">画像で書き出し</button>
     <button id="btn-export-pdf" title="印刷ダイアログからPDFとして保存できます">PDFで保存</button>
+    <button id="btn-share-link" title="共有用のリンクを作成してコピーします">🔗 共有リンクをコピー</button>
     <select id="share-select" title="共有設定" style="display:none;">
       <option value="private">&#128274; 非公開</option>
       <option value="link-view">&#128065; リンクで閲覧可</option>
@@ -389,7 +390,7 @@
   }
 
   function doSave(){
-    if (!sb || !currentUser) { setSaveStatus('no-login'); return; }
+    if (!sb || !currentUser) { setSaveStatus('no-login'); return Promise.resolve(); }
     setSaveStatus('saving');
     var payload = { title: state.title, data: { nodes: state.nodes, edges: state.edges, loopLabels: state.loopLabels, textNotes: state.textNotes } };
     var req;
@@ -399,7 +400,7 @@
       payload.owner_id = currentUser.id;
       req = sb.from('diagrams').insert(payload).select().single();
     }
-    req.then(function(res){
+    return req.then(function(res){
       if (res.error) { setSaveStatus('error', res.error.message); return; }
       if (!currentDiagramId && res.data){
         currentDiagramId = res.data.id;
@@ -418,6 +419,60 @@
     }).catch(function(err){
       setSaveStatus('error', err && err.message);
     });
+  }
+
+  function copyTextToClipboard(text, btn){
+    function done(ok){
+      if (!btn) return;
+      var original = btn.getAttribute('data-original-text');
+      if (original === null){ original = btn.textContent; btn.setAttribute('data-original-text', original); }
+      btn.textContent = ok ? '✅ コピーしました' : '❌ コピー失敗';
+      setTimeout(function(){ btn.textContent = original; }, 1500);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){ done(true); }).catch(function(){ done(false); });
+    } else {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        var ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        done(ok);
+      } catch(e){ done(false); }
+    }
+  }
+
+  function copyShareLink(){
+    if (!currentUser) { alert('先にログインしてください'); return; }
+    var btn = document.getElementById('btn-share-link');
+    function finish(){
+      copyTextToClipboard(window.location.href, btn);
+      if (currentShareSettings === 'private'){
+        setTimeout(function(){
+          alert('リンクをコピーしました。ただし現在この図は「非公開」に設定されているため、このままでは相手が開けません。共有するには、上部の共有設定を「リンクで閲覧可」または「リンクで編集可」に変更してください。');
+        }, 100);
+      }
+    }
+    if (currentDiagramId){
+      try {
+        var urlNow = new URL(window.location.href);
+        if (urlNow.searchParams.get('d') !== currentDiagramId){
+          urlNow.searchParams.set('d', currentDiagramId);
+          window.history.replaceState({}, '', urlNow);
+        }
+      } catch(e){}
+      finish();
+    } else {
+      doSave().then(function(){
+        if (currentDiagramId){ finish(); }
+        else { alert('保存に失敗したため、リンクを作成できませんでした'); }
+      });
+    }
   }
 
   function loadDiagramById(id){
@@ -1641,6 +1696,7 @@
   document.getElementById('btn-export-json').addEventListener('click', exportDiagramJson);
   document.getElementById('btn-export-png').addEventListener('click', exportDiagramPng);
   document.getElementById('btn-export-pdf').addEventListener('click', exportDiagramPdf);
+  document.getElementById('btn-share-link').addEventListener('click', copyShareLink);
   document.getElementById('btn-import-json').addEventListener('click', function(){ if (!readOnlyMode) document.getElementById('import-json-input').click(); });
   document.getElementById('import-json-input').addEventListener('change', function(e){
     var file = e.target.files && e.target.files[0];
