@@ -135,6 +135,22 @@
   #privateNoticeModal p { font-size: 13px; color: #444; line-height: 1.6; margin: 0 0 16px; }
   #privateNoticeModal button { border: 1px solid #ccc; background: #fff; border-radius: 6px; padding: 7px 16px; font-size: 13px; cursor: pointer; }
   #privateNoticeModal button:hover { background: #f2f2f2; }
+
+  #helpModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); align-items: center; justify-content: center; z-index: 55; }
+  #helpModal .box { background: #fff; border-radius: 10px; width: 640px; max-width: 92vw; max-height: 84vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,0.25); }
+  .help-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid #eee; flex: none; }
+  .help-header h3 { margin: 0; font-size: 16px; }
+  .help-tabs { display: flex; gap: 4px; padding: 10px 20px 0; flex: none; border-bottom: 1px solid #eee; }
+  .help-tab { border: 1px solid transparent; border-bottom: none; background: transparent; padding: 8px 14px; font-size: 13px; cursor: pointer; border-radius: 6px 6px 0 0; color: #666; }
+  .help-tab:hover { background: #f2f2f2; }
+  .help-tab.active { background: #eaf4ff; color: #0a5fa8; border-color: #b8dcff; font-weight: 600; }
+  .help-content { padding: 18px 22px; overflow-y: auto; font-size: 13px; line-height: 1.8; color: #333; }
+  .help-content h4 { font-size: 14px; margin: 18px 0 6px; color: #1a4b9c; }
+  .help-content h4:first-child { margin-top: 0; }
+  .help-content ul { margin: 4px 0 10px; padding-left: 20px; }
+  .help-content li { margin: 3px 0; }
+  .help-content p { margin: 6px 0; }
+  .help-content code { background: #f2f2f2; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -158,6 +174,7 @@
       <option value="link-edit">&#9998; リンクで編集可(ログイン必要)</option>
     </select>
     <span id="role-badge" style="display:none;"></span>
+    <button id="btn-help" title="ヘルプを開く">❓ ヘルプ</button>
     <div class="spacer"></div>
     <div id="presence-list"></div>
     <div id="authbar"></div>
@@ -179,6 +196,148 @@
       <h3>&#9888; 閲覧できなくなりました</h3>
       <p id="privateNoticeText"></p>
       <button id="btn-close-private-notice">OK</button>
+    </div>
+  </div>
+
+  <div id="helpModal">
+    <div class="box">
+      <div class="help-header">
+        <h3>ヘルプ</h3>
+        <button id="btn-close-help">閉じる</button>
+      </div>
+      <div class="help-tabs">
+        <button class="help-tab active" data-tab="participant">参加者用</button>
+        <button class="help-tab" data-tab="organizer">主催者用</button>
+        <button class="help-tab" data-tab="admin">管理者用</button>
+      </div>
+
+      <div class="help-content" id="help-content-participant">
+        <h4>このツールについて</h4>
+        <p>これは、システム思考の「ループ図(因果ループ図)」を、複数人でリアルタイムに共同編集できるツールです。ノード(要因)と矢印(因果関係)を使って、物事のつながりを図にしていきます。</p>
+
+        <h4>参加のしかた</h4>
+        <ul>
+          <li>主催者から共有された<strong>リンク(URL)</strong>を開いてください。</li>
+          <li>閲覧だけであればログイン不要な場合があります。編集するにはログインが必要です。画面右上のメールアドレス欄に自分のメールアドレスを入力し「ログインリンクを送信」を押すと、届いたメール内のリンクをクリックすることでログインできます。</li>
+          <li>画面右上のバッジで自分の権限を確認できます。「共同編集者」なら編集可、「閲覧のみ」なら見るだけです。</li>
+        </ul>
+
+        <h4>基本操作</h4>
+        <ul>
+          <li>左のツールバーで「ノード」「矢印」「ループ」「テキスト」を選び、キャンバス上をクリックすると追加されます。</li>
+          <li>要素をクリックすると選択され、右側にその内容(名前や色など)が表示されます。ドラッグで移動できます。</li>
+          <li>矢印は、始点ノード→終点ノードの順にクリックして作成します。矢印を選択すると「+」(同方向)「-」(逆方向)の極性を設定できます。</li>
+          <li>削除するには、要素を選択してから右側の削除ボタン、またはキーボードのDeleteキーを押します。</li>
+          <li>何もない場所をドラッグすると画面全体を動かせます(パン)。マウスホイールやツールバーの+/-で拡大縮小できます。「全体表示」ボタンで図全体が画面に収まります。</li>
+        </ul>
+
+        <h4>ループラベルの色</h4>
+        <p>ループラベルの円の色は種類によって変わります。暖色(オレンジ系)は「強化ループ(R)」、寒色(青系)は「バランスループ(B)」を表します。</p>
+
+        <h4>タブレットで使う場合</h4>
+        <p>指1本でのドラッグ(移動・パン)に対応しています。ピンチでの拡大縮小は無効化されているため、拡大縮小はツールバーのボタンを使ってください。画面が縦だと右側のパネルが邪魔になりやすいため、できれば横画面での利用をおすすめします。</p>
+
+        <h4>接続状態の見かた</h4>
+        <p>画面下部の丸いマークで接続状態がわかります(緑=オンライン、黄=再接続中、赤=オフライン)。黄色や赤のときに表示される警告帯が出ている間は、自分の編集が他の参加者に届いていない可能性があるので、少し待ってから編集を続けてください。</p>
+
+        <h4>その他</h4>
+        <ul>
+          <li>同時に参加できる人数には上限があります。上限を超えると、後から参加した人が自動的に切断されることがあります。</li>
+          <li>7日間まったく操作をしないと、自動的にログアウトされます。再度ログインリンクを受け取ってください。</li>
+        </ul>
+      </div>
+
+      <div class="help-content" id="help-content-organizer" style="display:none;">
+        <h4>主催者(オーナー)とは</h4>
+        <p>図を最初に保存した人が「オーナー」になります。オーナーだけができる操作(共有設定の変更、サンプル読込、JSON読込、マイ図一覧の利用など)があります。</p>
+
+        <h4>準備の流れ</h4>
+        <ul>
+          <li>ログインする(メールアドレスを入力し、届いたリンクをクリック)。</li>
+          <li>ノード・矢印・ループなどを使って図を作成する。</li>
+          <li>「今すぐ保存」で保存する。保存すると図ごとのURLが発行されます(以降は自動保存もされます)。</li>
+          <li>共有する前に、右上の共有設定を「リンクで閲覧可」または「リンクで編集可」に変更してください(初期値は「非公開」です)。</li>
+          <li>「🔗 共有リンクをコピー」ボタンを押すと、URLが自動的にクリップボードにコピーされます。これをメールやチャットで参加者に送ってください。</li>
+        </ul>
+
+        <h4>共有設定の種類</h4>
+        <ul>
+          <li><strong>非公開</strong>：オーナー本人しか開けません。</li>
+          <li><strong>リンクで閲覧可</strong>：リンクを知っている人は閲覧できますが、編集はできません。</li>
+          <li><strong>リンクで編集可</strong>：リンクを知っていて、かつログインしている人は編集もできます(ログインしていない人は閲覧のみ)。</li>
+        </ul>
+
+        <h4>参加者の管理</h4>
+        <ul>
+          <li>右上に接続中の参加者がバッジで一覧表示されます。</li>
+          <li>同時接続には上限があります(オーナー以外は最大7人、オーナーを含めた合計で最大8人)。上限を超えて参加しようとした人は自動的に切断されます。</li>
+          <li>個別に特定の参加者だけを退出させる機能は現状ありません。参加者を整理したい場合は、一度「共有設定」を「非公開」にしてから、再度「リンクで閲覧可/編集可」に戻し、参加してほしい人にだけ改めてリンクを送る、という運用にしてください(これにより古い参加者は接続が切れます)。</li>
+        </ul>
+
+        <h4>保存について</h4>
+        <ul>
+          <li>データベースへの自動保存は、オーナーの端末からのみ行われます(複数人が同時に保存して競合するのを防ぐためです)。他の参加者の変更も、いったんオーナーの端末に届いてから保存されます。</li>
+          <li>「今すぐ保存」ボタンは、編集権限がある人なら誰でも押せます。</li>
+          <li>オーナー自身の接続が一時的に切れて復帰した場合、データベースの最新の保存内容で再同期されます。接続が切れていた間のオーナー自身のごく直近の未保存の編集(数秒分)は失われる可能性があります。</li>
+          <li>画面を閉じようとしたときに未保存の変更が残っていると、ブラウザが確認メッセージを表示します。</li>
+        </ul>
+
+        <h4>マイ図一覧</h4>
+        <p>ログイン後、「マイ図一覧」から自分が保存した図の一覧を確認できます。タイトルをクリックしてその場で名前を変更したり、「開く」で編集を再開したり、「削除」で完全に削除したりできます(削除は元に戻せません)。</p>
+
+        <h4>書き出し(エクスポート)</h4>
+        <ul>
+          <li><strong>JSONで書き出し</strong>：図データをファイルとして保存できます。バックアップや、別の図として複製したいときの読み込み元にも使えます。</li>
+          <li><strong>画像で書き出し</strong>：図全体をPNG画像として保存します。</li>
+          <li><strong>PDFで保存</strong>：ブラウザの印刷ダイアログが開きます。そこから「PDFとして保存」を選んでください。</li>
+        </ul>
+        <p>JSONの読み込みやサンプルの読み込み、マイ図一覧の利用は、共有中はオーナー以外は行えません(他の参加者の画面と食い違ってしまうためです)。図を差し替えたい場合はオーナーが行ってください。</p>
+
+        <h4>ワークショップ運営のコツ</h4>
+        <ul>
+          <li>参加者にはあらかじめ「編集には自分のメールアドレスでのログインが必要」と伝えておくとスムーズです。</li>
+          <li>タブレットで参加する人がいる場合、横画面での利用を案内してください。</li>
+          <li>接続状態が不安定な参加者がいる場合、画面上部に警告帯が出ていないか確認するよう伝えてください。</li>
+        </ul>
+      </div>
+
+      <div class="help-content" id="help-content-admin" style="display:none;">
+        <h4>構成</h4>
+        <p>本アプリは単一のHTMLファイル(<code>index.html</code>)にHTML/CSS/JavaScriptがすべて含まれており、ビルド不要です。GitHub Pagesでホストし、バックエンドにはSupabase(PostgreSQL + Auth + Realtime)を利用しています。</p>
+
+        <h4>データ保存(diagramsテーブル)</h4>
+        <p>図のデータは <code>diagrams</code> テーブルに保存されます。主なカラムは <code>id</code>(主キー)、<code>title</code>、<code>data</code>(ノード・矢印・ループ・テキスト注釈をまとめたJSONB)、<code>owner_id</code>(auth.usersのユーザーID)、<code>share_settings</code>(private / link-view / link-edit)、<code>created_at</code> / <code>updated_at</code> です。Row Level Security(RLS)により、オーナー本人は全操作可、<code>share_settings</code> が link-view / link-edit の場合は他ユーザーにも閲覧を許可、link-edit の場合はログイン済みユーザーの更新も許可、という設計にしています。詳細なポリシーはSupabaseダッシュボードのDatabase &gt; Policiesで確認・編集できます。</p>
+
+        <h4>認証</h4>
+        <p>パスワードなしのマジックリンク(メールOTP)方式です。送信元メールアドレスはカスタムドメイン <code>su-udon.com</code> を取得し、Resend経由でSMTP認証を設定しています(Supabaseダッシュボードの Authentication &gt; Emails / SMTP Settings)。</p>
+
+        <h4>リアルタイム同期</h4>
+        <ul>
+          <li>図ごとに <code>diagram-{図のID}</code> という名前のRealtimeチャンネルを使い、Broadcast(<code>{broadcast:{self:false}}</code>)で操作(ノード追加・移動・削除など)を配信しています。<code>postgres_changes</code> は意図的に使用していません。</li>
+          <li>参加者の在席管理にはPresence機能を使っています。</li>
+          <li>Supabaseの制約として、Presenceのキー数は<strong>全プラン共通で1チャンネルあたり最大10</strong>という上限があります(Enterpriseプランのみ引き上げ交渉可)。これを踏まえ、アプリ側で同時参加人数のソフトな上限(オーナー以外7人、合計8人)を設け、上限超過者を自動切断する仕組みをクライアント側の決定的なロジック(参加時刻順のランク判定)で実装しています。サーバー側の強制ではないため、絶対的な保証ではありません。</li>
+          <li>接続が切断→再接続した場合(初回接続時は除く)、データベースから最新状態を取得して再同期する処理を入れています(<code>resyncFromServer</code>)。</li>
+        </ul>
+
+        <h4>保存の一本化</h4>
+        <p>自動保存(デバウンス付き)はオーナーのクライアントのみが実行するよう <code>scheduleAutosave()</code> 内でガードしています。複数クライアントが同時にデータベースへ書き込んで競合するリスクを避けるためです。手動の「今すぐ保存」ボタンはこのガードの対象外で、編集権限があれば誰でも実行できます(<code>doSave()</code> を直接呼び出すため)。</p>
+
+        <h4>自動ログアウト</h4>
+        <p>SupabaseのAuthセッション管理機能(タイムボックス化・非アクティブタイムアウト)はProプラン以上限定のため、本プロジェクトがFreeプランである前提でアプリ側(クライアントサイド)で疑似的に実装しています。<code>localStorage</code> に最終操作時刻(<code>loopdiagram_lastActivity</code>)を記録し、7日間以上更新がなければ次回アクセス時、および1時間ごとのチェックで <code>supabase.auth.signOut()</code> を呼び出します。JWT自体をサーバー側で強制失効させるものではなく、あくまでアプリ側の運用上の対策である点に注意してください。厳密なセッション管理が必要になった場合はProプランへのアップグレードを検討してください。</p>
+
+        <h4>デプロイ運用</h4>
+        <p>コードの変更は、GitHubリポジトリの <code>index.html</code> を直接編集してコミットする運用です。GitHub Pagesが自動的に再デプロイします。ビルドツールやパッケージ管理は使用していません。</p>
+
+        <h4>Supabase接続情報の変更</h4>
+        <p>スクリプト冒頭付近にある <code>SUPABASE_URL</code> と <code>SUPABASE_KEY</code>(publishable key)を書き換えることで、接続先のSupabaseプロジェクトを変更できます。</p>
+
+        <h4>既知の制約・注意点</h4>
+        <ul>
+          <li>特定の参加者だけを個別に強制退出させる機能はありません(Supabaseダッシュボードからセッションを操作するか、共有設定を非公開→再公開する運用で代替してください)。</li>
+          <li>オーナー自身の接続が切断→再接続した際、直近の未保存編集(数秒分)がデータベースの内容で上書きされる可能性があります。</li>
+          <li>Supabase Freeプランのメール送信にはレート制限があります(Authentication &gt; Rate Limits で確認可能)。短時間に大量のログインリンク送信を行うと制限に達することがあります。</li>
+        </ul>
+      </div>
     </div>
   </div>
 
@@ -259,6 +418,7 @@
   var readOnlyMode = false;
   var multiUserConnected = false;
   var MAX_NON_OWNER_PARTICIPANTS = 7; // 同時接続の上限(オーナーを除く人数。オーナーを含めた合計はこの人数+1人まで)
+  var INACTIVITY_LIMIT_MS = 7 * 24 * 60 * 60 * 1000; // 7日間操作がなければ自動ログアウト(Freeプランではサーバー側のセッション管理機能が使えないためアプリ側で実装)
 
   var svg = document.getElementById('canvas');
   var viewport = document.getElementById('viewport');
@@ -302,6 +462,27 @@
     if (evt.touches && evt.touches.length) return evt.touches[0];
     if (evt.changedTouches && evt.changedTouches.length) return evt.changedTouches[0];
     return evt;
+  }
+
+  var lastActivityRecordAt = 0;
+  function touchActivity(){
+    var now = Date.now();
+    if (now - lastActivityRecordAt < 60000) return; // 1分に1回程度に間引く
+    lastActivityRecordAt = now;
+    try { if (window.localStorage) localStorage.setItem('loopdiagram_lastActivity', String(now)); } catch(e){}
+  }
+
+  function checkInactivityLogout(){
+    if (!sb || !currentUser) return false;
+    var last = 0;
+    try { if (window.localStorage) last = parseInt(localStorage.getItem('loopdiagram_lastActivity') || '0', 10); } catch(e){}
+    if (last && (Date.now() - last) > INACTIVITY_LIMIT_MS){
+      sb.auth.signOut().then(function(){
+        alert('しばらく操作がなかったため、自動的にログアウトしました。続けるには再度ログインしてください。');
+      });
+      return true;
+    }
+    return false;
   }
 
   function newId(prefix){
@@ -643,6 +824,21 @@
     document.getElementById('diagramModal').style.display = 'none';
   }
 
+  function openHelpModal(){
+    document.getElementById('helpModal').style.display = 'flex';
+  }
+  function closeHelpModal(){
+    document.getElementById('helpModal').style.display = 'none';
+  }
+  function switchHelpTab(tab){
+    document.querySelectorAll('.help-tab').forEach(function(b){
+      b.classList.toggle('active', b.getAttribute('data-tab') === tab);
+    });
+    document.querySelectorAll('.help-content').forEach(function(c){ c.style.display = 'none'; });
+    var target = document.getElementById('help-content-' + tab);
+    if (target) target.style.display = 'block';
+  }
+
   function renderAuthBar(){
     var el = document.getElementById('authbar');
     if (currentUser){
@@ -687,6 +883,13 @@
     });
     sb.auth.getSession().then(function(res){
       currentUser = res.data && res.data.session ? res.data.session.user : null;
+      if (currentUser && checkInactivityLogout()){
+        currentUser = null;
+        renderAuthBar();
+        setSaveStatus('no-login');
+        return;
+      }
+      if (currentUser) touchActivity();
       renderAuthBar();
       setSaveStatus(currentUser ? (currentDiagramId ? 'saved' : 'ready') : 'no-login');
       var params = new URLSearchParams(window.location.search);
@@ -1759,6 +1962,11 @@
   document.getElementById('btn-close-modal').addEventListener('click', closeDiagramModal);
   var closePrivateNoticeBtn = document.getElementById('btn-close-private-notice');
   if (closePrivateNoticeBtn) closePrivateNoticeBtn.addEventListener('click', function(){ document.getElementById('privateNoticeModal').style.display = 'none'; });
+  document.getElementById('btn-help').addEventListener('click', openHelpModal);
+  document.getElementById('btn-close-help').addEventListener('click', closeHelpModal);
+  document.querySelectorAll('.help-tab').forEach(function(btn){
+    btn.addEventListener('click', function(){ switchHelpTab(btn.getAttribute('data-tab')); });
+  });
   titleInput.addEventListener('input', function(e){ if (readOnlyMode) return; state.title = e.target.value; scheduleAutosave(); broadcastOp('title', { title: state.title }); });
 
   svg.addEventListener('mousedown', function(evt){ if (isSyntheticMouseAfterTouch()) return; onCanvasMouseDown(evt); });
@@ -1799,6 +2007,11 @@
       evt.returnValue = '';
     }
   });
+
+  window.addEventListener('mousedown', function(){ if (currentUser) touchActivity(); });
+  window.addEventListener('keydown', function(){ if (currentUser) touchActivity(); });
+  window.addEventListener('touchstart', function(){ if (currentUser) touchActivity(); }, { passive: true });
+  setInterval(function(){ if (currentUser) checkInactivityLogout(); }, 60 * 60 * 1000); // 1時間毎に非アクティブ状態をチェック
 
   var shareSelectEl = document.getElementById('share-select');
   if (shareSelectEl) shareSelectEl.addEventListener('change', function(e){ updateShareSettings(e.target.value); });
