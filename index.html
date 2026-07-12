@@ -1475,8 +1475,35 @@
   }
 
   function exportDiagramPdf(){
-    fitToView();
-    setTimeout(function(){ window.print(); }, 50);
+    var b = computeContentBounds();
+    var padding = 40;
+    var minX, minY, w, h;
+    if (b){
+      minX = b.minX - padding; minY = b.minY - padding;
+      w = (b.maxX - b.minX) + padding * 2; h = (b.maxY - b.minY) + padding * 2;
+    } else {
+      minX = -200; minY = -200; w = 800; h = 600;
+    }
+    var prevViewBox = svg.getAttribute('viewBox');
+    var prevPreserve = svg.getAttribute('preserveAspectRatio');
+    var prevTransform = viewport.getAttribute('transform');
+    var restored = false;
+    function restore(){
+      if (restored) return;
+      restored = true;
+      if (prevViewBox) svg.setAttribute('viewBox', prevViewBox); else svg.removeAttribute('viewBox');
+      if (prevPreserve) svg.setAttribute('preserveAspectRatio', prevPreserve); else svg.removeAttribute('preserveAspectRatio');
+      viewport.setAttribute('transform', prevTransform || '');
+      window.removeEventListener('afterprint', restore);
+    }
+    svg.setAttribute('viewBox', minX + ' ' + minY + ' ' + w + ' ' + h);
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    viewport.setAttribute('transform', '');
+    window.addEventListener('afterprint', restore);
+    setTimeout(function(){
+      window.print();
+      setTimeout(restore, 1000);
+    }, 50);
   }
 
   function importDiagramJsonFile(file){
