@@ -768,6 +768,7 @@
         state.nodes = [];
         state.edges = [];
         state.loopLabels = [];
+        state.textNotes = [];
         state.title = '無題のループ図';
         titleInput.value = state.title;
         selected = { type: null, id: null };
@@ -1004,7 +1005,7 @@
       if (tool === 'add-text'){
         if (readOnlyMode) return;
         pushHistory();
-        var tn = { id: newId('text'), text: 'エリアの説明', x: pos.x, y: pos.y, fontSize: 20, color: '#666666' };
+        var tn = { id: newId('text'), text: 'テキストを入力してください', x: pos.x, y: pos.y, fontSize: 20, color: '#666666' };
         state.textNotes.push(tn);
         broadcastOp('text:add', { textNote: tn });
         selectItem('text', tn.id);
