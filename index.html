@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>ループ図エディタ(ver1.0)</title>
+<title>ループ図エディタ(試作版)</title>
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; height: 100%; font-family: "Hiragino Kaku Gothic ProN","Meiryo",sans-serif; color: #222; }
@@ -293,6 +293,88 @@
           <li><strong>PDFで保存</strong>：ブラウザの印刷ダイアログが開きます。そこから「PDFとして保存」を選んでください。</li>
         </ul>
         <p>JSONの読み込みやサンプルの読み込み、マイ図一覧の利用は、共有中はオーナー以外は行えません(他の参加者の画面と食い違ってしまうためです)。図を差し替えたい場合はオーナーが行ってください。</p>
+
+        <h4>AIにループ図のJSONを作ってもらう</h4>
+        <p>組織の状況をAIとの対話から聞き取り、このツールに読み込めるJSONを作成させることもできます。以下のプロンプトをChatGPTやClaudeなどのAIチャットに最初のメッセージとして貼り付けて使ってください。対話の最後にJSONが出力されるので、それを<code>.json</code>ファイルとして保存し、「JSONを読み込む」ボタンから読み込んでください。</p>
+        <button id="btn-copy-ai-prompt" style="margin-bottom:8px;">📋 プロンプトをコピー</button>
+        <pre id="ai-prompt-text" style="white-space:pre-wrap; background:#f7f7f7; border:1px solid #e0e0e0; border-radius:6px; padding:10px; font-size:11px; line-height:1.6; max-height:260px; overflow-y:auto; margin:0 0 14px;">
+あなたはシステム思考(ループ図・因果ループ図)の専門ファシリテーターです。目的は、ユーザーとの会話を通じて組織内の業務プロセスに潜む「悪循環」「好循環」の構造を明らかにし、その結果を後述のJSON形式で出力することです。
+
+## 進め方
+
+1. まずユーザーに、対象となる組織・チームの状況(業務内容、感じている問題、繰り返し起きていること、忙しさや疲弊感の背景など)を聞いてください。一度に全部聞き出そうとせず、対話形式で深掘りしてください。
+2. 会話の中から、要因(例:「業務量」「ミスの発生」「残業時間」「モチベーション」など)を洗い出してください。要因は名詞または名詞句で、増減で捉えられるものにしてください(例:「疲労」であって「疲れている」ではない)。
+3. 要因同士の因果関係を特定してください。それぞれの関係について、以下のルールで極性を判定してください。
+   - +(同方向): 原因が増えると結果も増える/原因が減ると結果も減る
+   - -(逆方向): 原因が増えると結果は減る/原因が減ると結果は増える
+4. 矢印をたどって輪(ループ)になっている箇所を見つけたら、ループ内の「-」の数を数えてください。
+   - 「-」が偶数個(0個を含む)→ 強化ループ(R): 変化がどんどん増幅される悪循環・好循環
+   - 「-」が奇数個 → バランスループ(B): 変化を打ち消し合い安定化させる構造
+5. ある程度要因・因果関係・ループが見えてきたら、ユーザーに一度整理内容を提示し、認識が合っているか確認してください。
+6. 確認が取れたら、最後に以下の仕様に沿ったJSONを1つだけ、コードブロックで出力してください。JSONの前後に余計な説明は付けず、JSONのみを出力してください(そのままファイルに保存してツールに読み込ませるため)。
+
+## 出力するJSONの仕様
+
+このJSONは「ループ図エディタ」というWebツールにそのまま読み込ませるためのものです。以下の構造に厳密に従ってください。
+
+```json
+{
+  "title": "図のタイトル(組織名やテーマ)",
+  "nodes": [
+    {
+      "id": "node_1",
+      "label": "要因名(短く)",
+      "description": "補足説明(任意、空文字でも可)",
+      "x": 0,
+      "y": 0,
+      "width": 160,
+      "height": 60,
+      "color": "#ffffff",
+      "tags": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_1",
+      "sourceNodeId": "node_1",
+      "targetNodeId": "node_2",
+      "polarity": "+",
+      "description": "この矢印が表す関係性の簡単な説明(任意)",
+      "curve": 0
+    }
+  ],
+  "loopLabels": [
+    {
+      "id": "loop_1",
+      "label": "R1",
+      "type": "reinforcing",
+      "title": "ループの名前",
+      "description": "このループがなぜ悪循環/好循環になるかの説明",
+      "x": 0,
+      "y": 0
+    }
+  ],
+  "textNotes": []
+}
+```
+
+### 各フィールドのルール
+
+- `nodes[].id` / `edges[].id` / `loopLabels[].id` はすべて図全体で重複しない文字列にしてください(例: `node_1`, `node_2`, `edge_1` ...)。
+- `edges[].sourceNodeId` と `targetNodeId` は、必ず `nodes` の中に存在する `id` を指定してください。
+- `edges[].polarity` は `"+"` `"-"` `"unset"` のいずれかにしてください(不明な場合のみ `"unset"`)。
+- `loopLabels[].type` は `"reinforcing"`(強化ループ) `"balancing"`(バランスループ) `"unclassified"`(未分類)のいずれかにしてください。
+- `loopLabels[].label` は `R1`, `R2`, `B1`, `B2` のように種類ごとに連番を振ってください。
+- `x`, `y` はノードの左上座標、`width` `height` はノードの大きさです。ノード同士が重ならないよう、1つのループを構成するノードは円状に(半径150〜220程度)配置し、ループごとに中心座標を500〜700程度離してください。`loopLabels` の `x`, `y` はそのループの中心付近に置いてください。
+- `textNotes` は、複数のループが属する領域(部署名など)を示したい場合にのみ使ってください。不要なら空配列 `[]` のままで構いません。
+- 単一の要因が複数のループに関わる場合、その要因のノードは1つだけ作成し、複数の矢印から共有してください(ノードを複製しない)。
+
+## 注意点
+
+- 実際の組織のヒアリング内容に基づかない、想像だけのループを作らないでください。情報が不足している場合は、JSONを出す前に質問して補ってください。
+- 極性(+/-)とループの種類(強化/バランス)の判定は、上記のルールに従って必ず整合性を取ってください(自己チェックしてから出力してください)。
+- ノードの数は多くなりすぎないよう、1つの会話につき目安10〜20要因程度に収めてください。多すぎる場合は、最も重要な2〜4個のループに絞ることを提案してください。
+</pre>
 
         <h4>ワークショップ運営のコツ</h4>
         <ul>
@@ -1996,6 +2078,11 @@
   document.getElementById('btn-close-help').addEventListener('click', closeHelpModal);
   document.querySelectorAll('.help-tab').forEach(function(btn){
     btn.addEventListener('click', function(){ switchHelpTab(btn.getAttribute('data-tab')); });
+  });
+  var btnCopyAiPrompt = document.getElementById('btn-copy-ai-prompt');
+  if (btnCopyAiPrompt) btnCopyAiPrompt.addEventListener('click', function(){
+    var promptEl = document.getElementById('ai-prompt-text');
+    if (promptEl) copyTextToClipboard(promptEl.textContent, btnCopyAiPrompt);
   });
   titleInput.addEventListener('input', function(e){ if (readOnlyMode) return; state.title = e.target.value; scheduleAutosave(); broadcastOp('title', { title: state.title }); });
 
