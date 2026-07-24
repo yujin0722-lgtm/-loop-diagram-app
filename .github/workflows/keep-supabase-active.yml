@@ -1,0 +1,19 @@
+name: Keep Supabase Active
+
+on:
+  schedule:
+    # 週2回(月・木)実行。Supabase Freeプランは7日間アクティビティがないと
+    # プロジェクトが自動一時停止されるため、それより十分短い間隔でpingする。
+    - cron: '0 3 * * 1,4'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST API
+        run: |
+          curl -sf -o /dev/null -w "HTTP %{http_code}\n" \
+            "https://uymrxblhklxcuvkuhoee.supabase.co/rest/v1/diagrams?select=id&limit=1" \
+            -H "apikey: sb_publishable_AxaBEmNnCI3z6DeIGss6SA_KgfYrl55" \
+            -H "Authorization: Bearer sb_publishable_AxaBEmNnCI3z6DeIGss6SA_KgfYrl55"
